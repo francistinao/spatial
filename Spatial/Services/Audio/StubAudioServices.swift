@@ -1,5 +1,7 @@
+import CoreAudio
 import CoreGraphics
 import AVFoundation
+import AudioToolbox
 import CoreMedia
 import Foundation
 import OSLog
@@ -286,6 +288,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
 
         let token = UUID()
         startToken = token
+        logger.info("Requested live capture start for target: \(String(describing: target), privacy: .public)")
 
         Task {
             await startCapture(for: target, token: token)
@@ -295,57 +298,72 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
     func stop() {
         let token = UUID()
         startToken = token
+        logger.info("Requested live capture stop")
 
         Task {
-            await stopCurrentStream()
+            await stopCurrentStream(updatingState: true)
         }
     }
 
     private func startCapture(for target: AudioCaptureTarget, token: UUID) async {
-        await stopCurrentStream()
+        logger.debug("Beginning live capture setup for target: \(String(describing: target), privacy: .public)")
+        await stopCurrentStream(updatingState: false)
 
         do {
+            logger.debug("Loading shareable content for live capture")
             let shareableContent = try await loadShareableContent()
             guard token == startToken else { return }
 
+            logger.debug("Creating ScreenCaptureKit content filter")
             let contentFilter = try makeContentFilter(for: target, shareableContent: shareableContent)
             let configuration = makeStreamConfiguration()
             let stream = SCStream(filter: contentFilter, configuration: configuration, delegate: self)
 
             do {
+                // ScreenCaptureKit always generates video frames even for audio-only capture.
+                // Both output types must be registered or the system errors on every video frame
+                // and stops delivering audio samples entirely.
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+                try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
             } catch {
                 throw NSError(domain: "Spatial.LiveAudioCapture", code: -1000, userInfo: [
-                    NSLocalizedDescriptionKey: "Unable to attach audio output: \(error.localizedDescription)"
+                    NSLocalizedDescriptionKey: "Unable to attach stream outputs: \(error.localizedDescription)"
                 ])
             }
 
             self.stream = stream
+            logger.debug("Starting ScreenCaptureKit stream")
             try await startCapture(stream)
             guard token == startToken else { return }
 
             captureState = .capturing
             isStopping = false
+            scKitCallbackCount = 0
+            scKitAudioCount = 0
             logger.info("Live capture started for target: \(String(describing: target), privacy: .public)")
             pipeline.notifyCaptureStarted()
         } catch {
             guard token == startToken else { return }
-            captureState = .failed(userFacingCaptureError(error, target: target))
             let message = userFacingCaptureError(error, target: target)
+            captureState = .failed(message)
             logger.error("Live capture failed: \(message, privacy: .public)")
             pipeline.notifyCaptureError(message)
         }
     }
 
-    private func stopCurrentStream() async {
+    private func stopCurrentStream(updatingState: Bool) async {
         guard let stream else {
-            captureState = .idle
+            if updatingState {
+                captureState = .idle
+            }
             return
         }
 
         isStopping = true
         self.stream = nil
-        captureState = .idle
+        if updatingState {
+            captureState = .idle
+        }
 
         await withCheckedContinuation { continuation in
             stream.stopCapture(completionHandler: { [weak self] error in
@@ -425,8 +443,11 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
     private func userFacingCaptureError(_ error: Error, target: AudioCaptureTarget) -> String {
         let nsError = error as NSError
         let description = nsError.localizedDescription
+        logger.error("Raw capture error. domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(description, privacy: .public)")
 
-        if description.localizedCaseInsensitiveContains("declined") {
+        if description.localizedCaseInsensitiveContains("declined")
+            || description.localizedCaseInsensitiveContains("not authorized")
+            || description.localizedCaseInsensitiveContains("permission") {
             return "Allow Screen Recording for Spatial in System Settings"
         }
 
@@ -440,11 +461,23 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
         }
     }
 
+    private var scKitCallbackCount = 0
+    private var scKitAudioCount = 0
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        scKitCallbackCount += 1
+
+        // Log every 60 callbacks so we know the delegate is firing at all
+        if scKitCallbackCount % 60 == 1 {
+            let isReady = CMSampleBufferDataIsReady(sampleBuffer)
+            logger.info("SCKit callback #\(self.scKitCallbackCount, privacy: .public) type=\(type == .audio ? "audio" : "screen", privacy: .public) dataReady=\(isReady, privacy: .public) audioDelivered=\(self.scKitAudioCount, privacy: .public)")
+        }
+
         guard type == .audio, CMSampleBufferDataIsReady(sampleBuffer) else {
             return
         }
 
+        scKitAudioCount += 1
         pipeline.deliver(sampleBuffer)
     }
 
@@ -496,11 +529,20 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     private var isCaptureRunning = false
     private var hasLoggedFirstLiveBuffer = false
     private var lastLoggedMeterBucket: Int?
+    private var pinnedOutputDeviceID: AudioDeviceID?
+    private var engineConfigObserver: NSObjectProtocol?
 
     init(pipeline: LiveAudioPipelineBridge) {
         self.pipeline = pipeline
         configureEngineGraph()
         installPipelineHandlers()
+        installEngineConfigurationObserver()
+    }
+
+    deinit {
+        if let observer = engineConfigObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     func configure(with settings: SpatialSettings) {
@@ -514,17 +556,21 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     }
 
     func start(for source: AudioSourceOption) {
-        currentSource = source
-
         guard source != .externalInput else {
+            currentSource = source
             currentStatus = .waitingForSource("External Input")
             return
         }
 
         installPipelineHandlers()
 
+        // Enqueue the currentSource assignment on processingQueue so it runs AFTER
+        // any previously enqueued stop() block. stop() sets currentSource = nil on
+        // processingQueue; if we set it here on the main thread it races with that
+        // block and gets overwritten, causing consume() to see nil and drop all buffers.
         processingQueue.async { [weak self] in
             guard let self else { return }
+            self.currentSource = source
 
             do {
                 try self.ensureEngineRunning()
@@ -547,6 +593,7 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             self.scheduledBufferCount = 0
             self.converter = nil
             self.inputFormatSignature = nil
+            self.pinnedOutputDeviceID = nil
             self.playerNode.stop()
             self.playerNode.reset()
             self.engine.stop()
@@ -582,6 +629,64 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
 
     func updateInputLevel(_ level: Float) {
         inputLevel = max(0, min(1, level))
+    }
+
+    func pinOutputDevice(_ deviceID: AudioDeviceID) {
+        // Synchronous so the caller can switch the system default immediately after,
+        // knowing the engine is already pinned to real hardware before BlackHole takes over.
+        processingQueue.sync { [weak self] in
+            guard let self else { return }
+            self.pinnedOutputDeviceID = deviceID
+            self.applyOutputDevicePin(deviceID)
+        }
+    }
+
+    func unpinOutputDevice() {
+        processingQueue.sync { [weak self] in
+            self?.pinnedOutputDeviceID = nil
+        }
+    }
+
+    private func applyOutputDevicePin(_ deviceID: AudioDeviceID) {
+        // kAudioOutputUnitProperty_CurrentDevice must be set while the audio unit is
+        // stopped. Setting it on a running unit is silently ignored by CoreAudio.
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            playerNode.stop()
+            engine.stop()
+        }
+
+        guard let audioUnit = engine.outputNode.audioUnit else {
+            logger.error("Cannot pin output device: output audio unit unavailable")
+            if wasRunning { try? engine.start() }
+            return
+        }
+
+        var mutableID = deviceID
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &mutableID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+
+        if status == noErr {
+            logger.info("Engine output pinned to hardware device ID=\(deviceID)")
+        } else {
+            logger.error("Failed to pin engine output device ID=\(deviceID): OSStatus=\(status)")
+        }
+
+        if wasRunning {
+            do {
+                try engine.start()
+                applyRealtimeSettings()
+                if isCaptureRunning { playerNode.play() }
+            } catch {
+                logger.error("Failed to restart engine after pin: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func configureEngineGraph() {
@@ -628,8 +733,50 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             return
         }
 
+        // Apply the pin BEFORE starting so the engine never renders a single frame
+        // to the wrong device. applyOutputDevicePin requires the engine to be stopped,
+        // so this is the correct window to set it.
+        if let deviceID = pinnedOutputDeviceID, let audioUnit = engine.outputNode.audioUnit {
+            var mutableID = deviceID
+            let status = AudioUnitSetProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &mutableID,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            if status == noErr {
+                logger.info("Engine output pre-pinned to device ID=\(deviceID) before start")
+            } else {
+                logger.error("Pre-pin failed for device ID=\(deviceID): OSStatus=\(status)")
+            }
+        }
+
         try engine.start()
         applyRealtimeSettings()
+    }
+
+    private func installEngineConfigurationObserver() {
+        engineConfigObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            self?.processingQueue.async {
+                guard let self, self.currentSource != nil else { return }
+                self.logger.info("AVAudioEngine reconfigured — restarting and re-pinning output device")
+                do {
+                    try self.ensureEngineRunning()
+                    if self.isCaptureRunning, !self.playerNode.isPlaying {
+                        self.playerNode.play()
+                    }
+                } catch {
+                    self.logger.error("Failed to restart engine after reconfiguration: \(error.localizedDescription, privacy: .public)")
+                    self.currentStatus = .error("Audio engine lost its output device")
+                }
+            }
+        }
     }
 
     private func applyRealtimeSettings() {
@@ -710,10 +857,22 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         scheduledBufferCount = 0
         hasLoggedFirstLiveBuffer = false
         lastLoggedMeterBucket = nil
+        consumeCallCount = 0
     }
 
+    private var consumeCallCount = 0
+
     private func consume(sampleBuffer: CMSampleBuffer) {
-        guard currentSource != nil, isCaptureRunning else { return }
+        consumeCallCount += 1
+        if consumeCallCount == 1 {
+            logger.info("First sample buffer reached DSP engine consume(). source=\(self.currentSource?.rawValue ?? "nil", privacy: .public) isCaptureRunning=\(self.isCaptureRunning, privacy: .public)")
+        }
+        guard currentSource != nil, isCaptureRunning else {
+            if consumeCallCount <= 3 {
+                logger.warning("consume() guard failed. source=\(self.currentSource?.rawValue ?? "nil", privacy: .public) isCaptureRunning=\(self.isCaptureRunning, privacy: .public)")
+            }
+            return
+        }
 
         do {
             try ensureEngineRunning()

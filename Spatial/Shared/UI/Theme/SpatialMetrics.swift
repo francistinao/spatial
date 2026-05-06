@@ -2,8 +2,14 @@ import CoreGraphics
 
 enum SpatialMetrics {
     static let popoverWidth: CGFloat = 452
-    static let widgetExpandedHeight: CGFloat = 600
+    static let widgetExpandedHeight: CGFloat = 780
     static let widgetCollapsedHeight: CGFloat = 54
+    static let widgetExpandedTopOffset: CGFloat = 44
+    static let settingsPopoverWidth: CGFloat = 320
+    static let settingsPopoverHeight: CGFloat = 430
+    static let sourceSelectionWidth: CGFloat = 520
+    static let sourceSelectionExpandedHeight: CGFloat = 560
+    static let sourceSelectionCollapsedHeight: CGFloat = 54
     static let cardRadius: CGFloat = 18
     static let cardPadding: CGFloat = 14
     static let sectionSpacing: CGFloat = 12

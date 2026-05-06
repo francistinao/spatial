@@ -35,6 +35,7 @@ final class SpatialAppModel: ObservableObject {
     private var isAwaitingCaptureStart = false
     private var pendingInitializationSource: AudioSourceOption?
     private var isRetryingPendingInitialization = false
+    private var lastSpeculativeRetryDate: Date?
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -62,10 +63,7 @@ final class SpatialAppModel: ObservableObject {
             screenRecordingAuthorized: environment.permissionsService.isScreenRecordingAuthorized
         )
 
-        if let preset = presets.first(where: { $0.kind == .classic }) {
-            self.settings = preset.settings
-        }
-
+        SpatialColor.setTheme(settings.theme)
         bindEngine()
         bindCaptureService()
         bindDemoPlayback()
@@ -90,10 +88,12 @@ final class SpatialAppModel: ObservableObject {
 
     func selectPreset(_ kind: SpatialPresetKind) {
         guard let preset = presets.first(where: { $0.kind == kind }) else { return }
+        let currentTheme = settings.theme
         selectedPreset = kind
         settings = preset.settings
-        environment.settingsStore.save(preset.settings)
-        environment.dspEngine.update(settings: preset.settings)
+        settings.theme = currentTheme
+        environment.settingsStore.save(settings)
+        environment.dspEngine.update(settings: settings)
     }
 
     func requestScreenRecordingAuthorization() {
@@ -101,8 +101,17 @@ final class SpatialAppModel: ObservableObject {
         refreshPermissionState()
     }
 
+    func openScreenRecordingSettings() {
+        environment.permissionsService.openScreenRecordingSettings()
+    }
+
     func completeScreenRecordingStep() {
         hasCompletedScreenRecordingStep = true
+
+        if !environment.permissionsService.isScreenRecordingAuthorized {
+            environment.permissionsService.requestScreenRecordingAuthorization()
+        }
+
         refreshPermissionState()
     }
 
@@ -111,6 +120,7 @@ final class SpatialAppModel: ObservableObject {
         let onboardingStatus: SpatialAppState.OnboardingStatus
 
         if screenRecordingAuthorized {
+            hasCompletedScreenRecordingStep = true
             isWaitingForScreenRecordingAuthorization = false
         }
 
@@ -135,9 +145,11 @@ final class SpatialAppModel: ObservableObject {
         isWaitingForScreenRecordingAuthorization = false
         isAwaitingCaptureStart = false
         pendingInitializationSource = nil
+        lastSpeculativeRetryDate = nil
         isWidgetManuallyExpanded = false
         logger.info("Selected audio source: \(source.rawValue, privacy: .public)")
         nowPlaying = environment.playbackMetadataService.currentNowPlaying(for: source)
+        deactivateEchoPrevention()
         environment.audioCaptureService.stop()
         environment.dspEngine.stop()
         environment.demoPlaybackService.stopDemo()
@@ -149,6 +161,7 @@ final class SpatialAppModel: ObservableObject {
     func initializeSelectedSource() {
         guard let selectedAudioSource else { return }
         let target = environment.audioSourceResolver.captureTarget(for: selectedAudioSource)
+        let screenRecordingAuthorized = environment.permissionsService.isScreenRecordingAuthorized
         logger.info("Initializing source=\(selectedAudioSource.rawValue, privacy: .public) target=\(String(describing: target), privacy: .public)")
 
         hasInitializedSelectedSource = false
@@ -157,31 +170,28 @@ final class SpatialAppModel: ObservableObject {
         isAwaitingCaptureStart = false
 
         if targetRequiresScreenRecording(target),
-           !environment.permissionsService.isScreenRecordingAuthorized {
-            pendingInitializationSource = selectedAudioSource
-            isWaitingForScreenRecordingAuthorization = true
-            environment.audioCaptureService.stop()
-            environment.dspEngine.stop()
-            logger.warning("Screen Recording permission was not pre-authorized at initialize time; requesting access before live capture startup")
+           !screenRecordingAuthorized {
+            logger.warning("Screen Recording permission was not pre-authorized at initialize time; requesting access and attempting live capture startup")
             environment.permissionsService.requestScreenRecordingAuthorization()
-            applyEngineStatus(.error(screenRecordingPermissionMessage))
-            refreshPermissionState()
-            refreshWidgetDisplayMode()
-            synchronizeDemoPlayback()
-            return
         }
 
         pendingInitializationSource = nil
-        environment.audioCaptureService.stop()
         environment.dspEngine.stop()
         environment.dspEngine.configure(with: settings)
         environment.dspEngine.start(for: selectedAudioSource)
 
         switch target {
         case .externalInput:
+            environment.audioCaptureService.stop()
             applyEngineStatus(environment.dspEngine.currentStatus)
             hasInitializedSelectedSource = true
         case .application, .systemMix:
+            // Activate echo prevention BEFORE starting SCKit capture.
+            // SCKit audio delivery is tied to the audio routing at stream-start time.
+            // Switching the system output to BlackHole after the stream starts silently
+            // kills audio delivery without any error. Starting with BlackHole already
+            // set means SCKit captures the BlackHole-routed audio from the first buffer.
+            activateEchoPrevention()
             isAwaitingCaptureStart = true
             environment.audioCaptureService.prepare(for: target)
             environment.audioCaptureService.start()
@@ -229,15 +239,82 @@ final class SpatialAppModel: ObservableObject {
         updateSettings { $0.elevation = value }
     }
 
+    func updateTheme(_ theme: SpatialTheme) {
+        SpatialColor.setTheme(theme)
+        updateSettings { $0.theme = theme }
+    }
+
+    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+        environment.launchAtLoginService.setEnabled(enabled)
+        launchAtLoginEnabled = environment.launchAtLoginService.isEnabled
+    }
+
     var isSourceActive: Bool {
         guard environment.dspEngine.supportsLiveInputProcessing else {
             return false
         }
 
-        return hasInitializedSelectedSource
+        return isLiveCaptureActive
             && nowPlaying.isPlaying
             && nowPlaying.source == selectedAudioSource
             && !isDemoModeActive
+    }
+
+    var isLiveCaptureActive: Bool {
+        guard environment.dspEngine.supportsLiveInputProcessing else {
+            return false
+        }
+
+        guard selectedAudioSource != nil,
+              state.isEnabled,
+              hasInitializedSelectedSource,
+              !isWaitingForScreenRecordingAuthorization,
+              !isAwaitingCaptureStart else {
+            return false
+        }
+
+        if case .error = engineStatus {
+            return false
+        }
+
+        return true
+    }
+
+    var areLiveControlsEnabled: Bool {
+        isLiveCaptureActive
+    }
+
+    var liveControlsStatusText: String {
+        if let selectedAudioSource,
+           !hasAttemptedSelectedSourceInitialization {
+            return "Start Live Audio for \(selectedAudioSource.title.replacingOccurrences(of: "\n", with: " ")) to enable realtime 8D controls."
+        }
+
+        if isWaitingForScreenRecordingAuthorization {
+            return "Screen Recording is required before realtime 8D controls can affect live audio."
+        }
+
+        if isAwaitingCaptureStart {
+            return "Connecting live capture. Controls will unlock once audio starts streaming."
+        }
+
+        if case .error(let message) = engineStatus {
+            return message
+        }
+
+        if !state.isEnabled {
+            return "Turn Spatial back on to adjust the live 8D effect."
+        }
+
+        if hasInitializedSelectedSource && !environment.dspEngine.supportsLiveInputProcessing {
+            return "This source is connected in preview mode only."
+        }
+
+        if isLiveCaptureActive {
+            return "Realtime 8D controls are active."
+        }
+
+        return "Live capture is not active yet."
     }
 
     var canCollapseToNotch: Bool {
@@ -259,6 +336,10 @@ final class SpatialAppModel: ObservableObject {
     var collapsedSubtitle: String {
         if isDemoModeActive {
             return "SPATIAL DEMO"
+        }
+
+        if case .error = engineStatus {
+            return "CAPTURE ERROR"
         }
 
         if isWaitingForScreenRecordingAuthorization {
@@ -350,6 +431,10 @@ final class SpatialAppModel: ObservableObject {
             return "LIVE AUDIO ACTIVE"
         }
 
+        if case .error = engineStatus {
+            return "CAPTURE ERROR"
+        }
+
         if isWaitingForScreenRecordingAuthorization {
             return "SCREEN RECORDING REQUIRED"
         }
@@ -366,19 +451,25 @@ final class SpatialAppModel: ObservableObject {
             return "Choose a source to start live 8D processing."
         }
 
+        let selectedSourceTitle = selectedAudioSource.title.replacingOccurrences(of: "\n", with: " ")
+
         if isWaitingForScreenRecordingAuthorization {
-            return "Grant Screen Recording in System Settings, then return to Spatial. \(selectedAudioSource.title.replacingOccurrences(of: \"\\n\", with: \" \")) will reconnect automatically."
+            return "Grant Screen Recording in System Settings, then return to Spatial. \(selectedSourceTitle) will reconnect automatically."
         }
 
         if isAwaitingCaptureStart {
-            return "Connecting to live audio from \(selectedAudioSource.title.replacingOccurrences(of: \"\\n\", with: \" \"))."
+            return "Connecting to live audio from \(selectedSourceTitle)."
+        }
+
+        if case .error(let message) = engineStatus {
+            return "\(message) Retry Start Live Audio after fixing the issue."
         }
 
         if hasInitializedSelectedSource {
             return "Live capture is active. Spotify now playing metadata is separate from the audio signal that drives the visualizer."
         }
 
-        return "Selecting \(selectedAudioSource.title.replacingOccurrences(of: \"\\n\", with: \" \")) chooses the target. Start Live Audio to capture the real signal for 8D motion and the visualizer."
+        return "Selecting \(selectedSourceTitle) chooses the target. Start Live Audio to capture the real signal for 8D motion and the visualizer."
     }
 
     var canStartSelectedSource: Bool {
@@ -391,14 +482,16 @@ final class SpatialAppModel: ObservableObject {
 
     var hasDryWetEchoRisk: Bool {
         environment.dspEngine.supportsLiveInputProcessing
-            && hasInitializedSelectedSource
-            && state.isEnabled
-            && selectedAudioSource != nil
+            && isLiveCaptureActive
             && !isDemoModeActive
+            && !environment.echoPreventionService.isActive
     }
 
     var echoRiskMessage: String {
-        "To avoid echo, route the source into BlackHole or Loopback and listen only to Spatial."
+        if environment.echoPreventionService.blackHoleAvailable {
+            return "To avoid echo, install BlackHole and Spatial will route audio automatically."
+        }
+        return "Install BlackHole (free) so Spatial can route audio without echo. Visit existential.audio/blackhole"
     }
 
     deinit {
@@ -453,6 +546,7 @@ final class SpatialAppModel: ObservableObject {
             isAwaitingCaptureStart = false
             if hasInitializedSelectedSource {
                 hasInitializedSelectedSource = false
+                deactivateEchoPrevention()
                 refreshPermissionState()
                 refreshWidgetDisplayMode()
                 synchronizeDemoPlayback()
@@ -473,8 +567,11 @@ final class SpatialAppModel: ObservableObject {
             logger.error("Capture failed before initialization completed: \(message, privacy: .public)")
             isAwaitingCaptureStart = false
             hasInitializedSelectedSource = false
+            deactivateEchoPrevention()
             isWaitingForScreenRecordingAuthorization = isScreenRecordingPermissionError(message)
-            if !isWaitingForScreenRecordingAuthorization {
+            if isWaitingForScreenRecordingAuthorization {
+                pendingInitializationSource = selectedAudioSource
+            } else {
                 pendingInitializationSource = nil
             }
             applyEngineStatus(.error(message))
@@ -482,6 +579,30 @@ final class SpatialAppModel: ObservableObject {
             refreshWidgetDisplayMode()
             synchronizeDemoPlayback()
         }
+    }
+
+    private func activateEchoPrevention() {
+        let echoPrevention = environment.echoPreventionService
+        guard !echoPrevention.isActive else { return }
+
+        let liveDSPEngine = environment.dspEngine as? LiveDSPEngine
+        let activated = echoPrevention.activate { deviceID in
+            liveDSPEngine?.pinOutputDevice(deviceID)
+        }
+
+        if activated {
+            logger.info("Echo prevention activated — system audio routed through BlackHole")
+        } else if echoPrevention.blackHoleAvailable {
+            logger.warning("Echo prevention failed to activate despite BlackHole being present")
+        } else {
+            logger.info("Echo prevention skipped — BlackHole not installed")
+        }
+    }
+
+    private func deactivateEchoPrevention() {
+        guard environment.echoPreventionService.isActive else { return }
+        environment.echoPreventionService.deactivate()
+        logger.info("Echo prevention deactivated — system output restored")
     }
 
     private func targetRequiresScreenRecording(_ target: AudioCaptureTarget) -> Bool {
@@ -507,6 +628,10 @@ final class SpatialAppModel: ObservableObject {
         logger.debug("Now playing refresh. source=\(self.selectedAudioSource?.rawValue ?? "none", privacy: .public) title=\(self.nowPlaying.trackName, privacy: .public) artist=\(self.nowPlaying.artistName, privacy: .public) playing=\(self.nowPlaying.isPlaying, privacy: .public) demo=\(self.isDemoModeActive, privacy: .public)")
         synchronizeDemoPlayback()
         refreshWidgetDisplayMode()
+        if isWaitingForScreenRecordingAuthorization {
+            logger.debug("Polling permission state from timer (waiting for screen recording)")
+            refreshPermissionState()
+        }
     }
 
     private func refreshWidgetDisplayMode() {
@@ -590,7 +715,14 @@ final class SpatialAppModel: ObservableObject {
     }
 
     private func retryPendingInitializationIfNeeded(screenRecordingAuthorized: Bool) {
-        guard screenRecordingAuthorized,
+        // CGPreflightScreenCaptureAccess() returns a stale cached false in-process after
+        // the user grants permission at runtime. When we're already in the waiting state,
+        // bypass the preflight and attempt speculatively — SCShareableContent.current is
+        // the authoritative check and will succeed if permission was actually granted.
+        let isSpeculativeBypass = isWaitingForScreenRecordingAuthorization && !screenRecordingAuthorized
+        let canAttempt = screenRecordingAuthorized || isWaitingForScreenRecordingAuthorization
+
+        guard canAttempt,
               let pendingInitializationSource,
               pendingInitializationSource == selectedAudioSource,
               !hasInitializedSelectedSource,
@@ -599,7 +731,20 @@ final class SpatialAppModel: ObservableObject {
             return
         }
 
-        logger.info("Retrying pending live capture initialization for source=\(pendingInitializationSource.rawValue, privacy: .public)")
+        // Rate-limit speculative retries to avoid a tight retry loop while permission
+        // is still denied. Each failure immediately triggers this path via
+        // handleCaptureStateChange(.failed) → refreshPermissionState(), so without
+        // throttling the retry fires again before SCShareableContent.current returns.
+        if isSpeculativeBypass {
+            let now = Date()
+            if let last = lastSpeculativeRetryDate, now.timeIntervalSince(last) < 5 {
+                logger.debug("Retry throttled: last speculative attempt was \(now.timeIntervalSince(last), format: .fixed(precision: 1), privacy: .public)s ago")
+                return
+            }
+            lastSpeculativeRetryDate = now
+        }
+
+        logger.info("Retrying pending live capture for source=\(pendingInitializationSource.rawValue, privacy: .public) speculativeBypass=\(isSpeculativeBypass, privacy: .public)")
         isRetryingPendingInitialization = true
         defer { isRetryingPendingInitialization = false }
         initializeSelectedSource()

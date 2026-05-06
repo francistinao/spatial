@@ -15,7 +15,7 @@ struct WidgetRootView: View {
 
             if model.widgetDisplayMode == .expanded {
                 ExpandedWidgetView(model: model, openSettings: openSettings)
-                    .padding(.top, 34)
+                    .padding(.top, SpatialMetrics.widgetExpandedTopOffset)
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
                         removal: .opacity
@@ -214,9 +214,18 @@ private struct ExpandedWidgetView: View {
             Text("Rotate sets side-to-side orbit span. Depth controls binaural intensity. Ambience adds space. Width expands stereo spread.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(SpatialColor.textSecondary.opacity(0.92))
+
+            if !model.areLiveControlsEnabled {
+                Text(model.liveControlsStatusText)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(SpatialColor.accentLight.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 14)
+        .disabled(!model.areLiveControlsEnabled)
+        .opacity(model.areLiveControlsEnabled ? 1 : 0.6)
     }
 
     private var sliders: some View {
@@ -242,6 +251,8 @@ private struct ExpandedWidgetView: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 14)
+        .disabled(!model.areLiveControlsEnabled)
+        .opacity(model.areLiveControlsEnabled ? 1 : 0.6)
     }
 
     private var presets: some View {
@@ -275,6 +286,8 @@ private struct ExpandedWidgetView: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 18)
+        .disabled(!model.areLiveControlsEnabled)
+        .opacity(model.areLiveControlsEnabled ? 1 : 0.6)
     }
 
     private var footer: some View {
@@ -329,6 +342,10 @@ private struct ExpandedWidgetView: View {
     private var positionVisualizerSubtitle: String {
         if model.isDemoModeActive {
             return "Visualizer synced to demo signal level"
+        }
+
+        if !model.areLiveControlsEnabled {
+            return model.liveControlsStatusText
         }
 
         if model.hasDryWetEchoRisk {
@@ -396,8 +413,23 @@ private struct CollapsedWidgetView: View {
         .padding(.horizontal, 18)
         .frame(width: SpatialMetrics.popoverWidth - 36, height: 36)
         .background(
-            Capsule(style: .continuous)
-                .fill(Color.black)
+            ZStack {
+                FluidBiasGlow()
+                    .scaleEffect(x: 1.08, y: 1.95)
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.96),
+                                SpatialColor.accent.opacity(0.16),
+                                Color.black.opacity(0.94)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            }
         )
         .overlay(
             Capsule(style: .continuous)
@@ -405,6 +437,44 @@ private struct CollapsedWidgetView: View {
         )
         .shadow(color: .black.opacity(0.26), radius: 14, y: 6)
         .contentShape(Capsule())
+    }
+}
+
+private struct FluidBiasGlow: View {
+    @State private var drift = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Circle()
+                    .fill(SpatialColor.accent.opacity(0.32))
+                    .frame(width: geometry.size.width * 0.36, height: geometry.size.height * 2.9)
+                    .blur(radius: 32)
+                    .offset(
+                        x: drift ? geometry.size.width * 0.22 : -geometry.size.width * 0.18,
+                        y: drift ? -3 : 3
+                    )
+
+                Circle()
+                    .fill(SpatialColor.accentLight.opacity(0.24))
+                    .frame(width: geometry.size.width * 0.24, height: geometry.size.height * 2.2)
+                    .blur(radius: 26)
+                    .offset(
+                        x: drift ? -geometry.size.width * 0.20 : geometry.size.width * 0.16,
+                        y: drift ? 4 : -4
+                    )
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .opacity(0.95)
+            .drawingGroup()
+            .onAppear {
+                guard !drift else { return }
+                withAnimation(.easeInOut(duration: 4.2).repeatForever(autoreverses: true)) {
+                    drift = true
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -558,13 +628,7 @@ private struct WidgetLinearSlider: View {
                         .frame(height: 8)
 
                     Capsule(style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [SpatialColor.accentLight, SpatialColor.accent],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(SpatialColor.accent)
                         .frame(width: geometry.size.width * value, height: 8)
 
                     Circle()

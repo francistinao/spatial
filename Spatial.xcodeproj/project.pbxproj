@@ -45,6 +45,8 @@
 		A00000300000000000000000 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000300000000000000001 /* LaunchAtLoginService.swift */; };
 		A00000310000000000000000 /* OutputDeviceObserving.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000310000000000000001 /* OutputDeviceObserving.swift */; };
 		A00000320000000000000000 /* StubSystemServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000320000000000000001 /* StubSystemServices.swift */; };
+		A00000B10000000000000000 /* AudioDeviceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000B10000000000000001 /* AudioDeviceService.swift */; };
+		A00000B20000000000000000 /* EchoPreventionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000B20000000000000001 /* EchoPreventionService.swift */; };
 		A00000330000000000000000 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000330000000000000001 /* SettingsStore.swift */; };
 		A00000340000000000000000 /* PlaybackMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000340000000000000001 /* PlaybackMetadataService.swift */; };
 		A00000350000000000000000 /* StubPlaybackMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000350000000000000001 /* StubPlaybackMetadataService.swift */; };
@@ -91,6 +93,8 @@
 		A00000300000000000000001 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		A00000310000000000000001 /* OutputDeviceObserving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDeviceObserving.swift; sourceTree = "<group>"; };
 		A00000320000000000000001 /* StubSystemServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubSystemServices.swift; sourceTree = "<group>"; };
+		A00000B10000000000000001 /* AudioDeviceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceService.swift; sourceTree = "<group>"; };
+		A00000B20000000000000001 /* EchoPreventionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoPreventionService.swift; sourceTree = "<group>"; };
 		A00000330000000000000001 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		A00000340000000000000001 /* PlaybackMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackMetadataService.swift; sourceTree = "<group>"; };
 		A00000350000000000000001 /* StubPlaybackMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubPlaybackMetadataService.swift; sourceTree = "<group>"; };
@@ -255,6 +259,8 @@
 				A00000310000000000000001 /* OutputDeviceObserving.swift */,
 				A00000320000000000000001 /* StubSystemServices.swift */,
 				A00000330000000000000001 /* SettingsStore.swift */,
+				A00000B10000000000000001 /* AudioDeviceService.swift */,
+				A00000B20000000000000001 /* EchoPreventionService.swift */,
 			);
 			path = System;
 			sourceTree = "<group>";
@@ -428,6 +434,8 @@
 				A00000310000000000000000 /* OutputDeviceObserving.swift in Sources */,
 				A00000320000000000000000 /* StubSystemServices.swift in Sources */,
 				A00000330000000000000000 /* SettingsStore.swift in Sources */,
+				A00000B10000000000000000 /* AudioDeviceService.swift in Sources */,
+				A00000B20000000000000000 /* EchoPreventionService.swift in Sources */,
 				A00000340000000000000000 /* PlaybackMetadataService.swift in Sources */,
 				A00000350000000000000000 /* StubPlaybackMetadataService.swift in Sources */,
 				A00000360000000000000000 /* PresetStore.swift in Sources */,

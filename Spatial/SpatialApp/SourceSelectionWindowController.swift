@@ -21,7 +21,12 @@ final class SourceSelectionWindowController: NSWindowController {
         )
 
         let window = SpatialOverlayPanel(contentViewController: hostingController)
-        window.setContentSize(NSSize(width: 520, height: 440))
+        window.setContentSize(
+            NSSize(
+                width: SpatialMetrics.sourceSelectionWidth,
+                height: SpatialMetrics.sourceSelectionExpandedHeight
+            )
+        )
         window.styleMask = [.borderless]
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = false

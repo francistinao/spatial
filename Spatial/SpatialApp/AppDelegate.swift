@@ -7,4 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusBarController = StatusBarController(environment: environment)
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        environment.echoPreventionService.deactivate()
+    }
 }

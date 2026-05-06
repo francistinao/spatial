@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 struct OnboardingView: View {
     @ObservedObject var model: SpatialAppModel
@@ -39,11 +38,6 @@ struct OnboardingView: View {
 
     private func openPermissionSettings() {
         model.requestScreenRecordingAuthorization()
-
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
-            return
-        }
-
-        NSWorkspace.shared.open(url)
+        model.openScreenRecordingSettings()
     }
 }

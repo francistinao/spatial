@@ -1,4 +1,5 @@
 import ApplicationServices
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -10,6 +11,14 @@ final class SystemAudioPermissionsService: PermissionsService {
     func requestScreenRecordingAuthorization() {
         _ = CGRequestScreenCaptureAccess()
     }
+
+    func openScreenRecordingSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
 }
 
 final class StubPermissionsService: PermissionsService {
@@ -18,6 +27,9 @@ final class StubPermissionsService: PermissionsService {
     }
 
     func requestScreenRecordingAuthorization() {
+    }
+
+    func openScreenRecordingSettings() {
     }
 }
 

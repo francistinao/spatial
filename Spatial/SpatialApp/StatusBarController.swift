@@ -34,12 +34,12 @@ final class StatusBarController: NSObject {
 
         settingsPopover.behavior = .transient
         settingsPopover.animates = true
-        settingsPopover.contentSize = NSSize(width: 320, height: 340)
+        settingsPopover.contentSize = NSSize(
+            width: SpatialMetrics.settingsPopoverWidth,
+            height: SpatialMetrics.settingsPopoverHeight
+        )
         settingsPopover.contentViewController = NSHostingController(
-            rootView: SettingsView(
-                settings: appModel.settings,
-                launchAtLoginEnabled: appModel.launchAtLoginEnabled
-            )
+            rootView: SettingsView(model: appModel)
         )
     }
 

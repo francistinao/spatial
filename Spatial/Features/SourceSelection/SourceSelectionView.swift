@@ -23,7 +23,11 @@ struct SourceSelectionView: View {
                     ))
             }
         }
-        .frame(width: 520, height: isExpanded ? 440 : 54, alignment: .top)
+        .frame(
+            width: SpatialMetrics.sourceSelectionWidth,
+            height: isExpanded ? SpatialMetrics.sourceSelectionExpandedHeight : SpatialMetrics.sourceSelectionCollapsedHeight,
+            alignment: .top
+        )
     }
 
     private var notchBar: some View {
@@ -227,6 +231,10 @@ struct SourceSelectionView: View {
     private var headerTitle: String {
         if model.hasInitializedSelectedSource {
             return "Live Audio Connected"
+        }
+
+        if case .error = model.engineStatus {
+            return "Live Capture Failed"
         }
 
         if model.isWaitingForScreenRecordingAuthorization {
