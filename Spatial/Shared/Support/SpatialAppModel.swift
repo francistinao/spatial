@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import CoreGraphics
 import Foundation
@@ -6,6 +7,8 @@ import OSLog
 @MainActor
 final class SpatialAppModel: ObservableObject {
     private let logger = Logger(subsystem: "com.spatial.app", category: "SpatialAppModel")
+    private static let allowUnsafeSystemAudioFallback = ProcessInfo.processInfo.environment["SPATIAL_ALLOW_SYSTEM_AUDIO_FALLBACK"] == "1"
+
     enum WidgetDisplayMode: Equatable {
         case expanded
         case collapsed
@@ -28,14 +31,32 @@ final class SpatialAppModel: ObservableObject {
     @Published private(set) var hasCompletedScreenRecordingStep: Bool
     @Published private(set) var hasAttemptedSelectedSourceInitialization: Bool
     @Published private(set) var isWaitingForScreenRecordingAuthorization: Bool
+    @Published private(set) var isWaitingForScreenCapturePermission: Bool
+    @Published private(set) var isInstallingDriver: Bool
+    @Published private(set) var driverInstallationStatus: String?
 
     let environment: AppEnvironment
     private var playbackRefreshTimer: Timer?
     private var isWidgetManuallyExpanded = false
     private var isAwaitingCaptureStart = false
-    private var pendingInitializationSource: AudioSourceOption?
-    private var isRetryingPendingInitialization = false
-    private var lastSpeculativeRetryDate: Date?
+    private var lastLoggedNowPlayingSnapshot: NowPlayingInfo?
+    private var lastLoggedDemoPlaybackSignature: String?
+
+    var isDriverReady: Bool {
+        environment.virtualAudioRoutingService.virtualDeviceAvailable
+    }
+
+    var isDriverBundleInstalledOnly: Bool {
+        environment.audioDeviceService.isSpatialDriverInstalled && !isDriverReady
+    }
+
+    var isDriverInstalled: Bool {
+        isDriverReady || environment.audioDeviceService.isSpatialDriverInstalled
+    }
+
+    var canContinuePastDriverInstallation: Bool {
+        isDriverInstalled
+    }
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -52,14 +73,18 @@ final class SpatialAppModel: ObservableObject {
         self.demoTrackName = "Hero"
         self.demoSourceDescription = "macOS Spatial Demo"
         self.hasInitializedSelectedSource = false
-        self.hasCompletedScreenRecordingStep = false
+        self.hasCompletedScreenRecordingStep = environment.virtualAudioRoutingService.virtualDeviceAvailable
+            || environment.permissionsService.isScreenRecordingAuthorized
         self.hasAttemptedSelectedSourceInitialization = false
         self.isWaitingForScreenRecordingAuthorization = false
+        self.isWaitingForScreenCapturePermission = false
+        self.isInstallingDriver = false
+        self.driverInstallationStatus = nil
         self.state = SpatialAppState(
             isEnabled: true,
             processingState: .idle,
             onboardingStatus: .needsOnboarding,
-            recommendedOutput: "Headphones Recommended",
+            recommendedOutput: "Install Spatial Speaker to begin live routing",
             screenRecordingAuthorized: environment.permissionsService.isScreenRecordingAuthorized
         )
 
@@ -96,35 +121,27 @@ final class SpatialAppModel: ObservableObject {
         environment.dspEngine.update(settings: settings)
     }
 
-    func requestScreenRecordingAuthorization() {
-        environment.permissionsService.requestScreenRecordingAuthorization()
-        refreshPermissionState()
-    }
-
-    func openScreenRecordingSettings() {
-        environment.permissionsService.openScreenRecordingSettings()
-    }
-
-    func completeScreenRecordingStep() {
-        hasCompletedScreenRecordingStep = true
-
-        if !environment.permissionsService.isScreenRecordingAuthorized {
-            environment.permissionsService.requestScreenRecordingAuthorization()
-        }
-
-        refreshPermissionState()
-    }
-
     func refreshPermissionState() {
+        let driverReady = isDriverReady
+        let driverInstalled = isDriverInstalled
         let screenRecordingAuthorized = environment.permissionsService.isScreenRecordingAuthorized
         let onboardingStatus: SpatialAppState.OnboardingStatus
 
-        if screenRecordingAuthorized {
+        if driverInstalled || screenRecordingAuthorized {
             hasCompletedScreenRecordingStep = true
-            isWaitingForScreenRecordingAuthorization = false
         }
 
-        if !screenRecordingAuthorized && !hasCompletedScreenRecordingStep {
+        if driverReady {
+            isWaitingForScreenRecordingAuthorization = false
+            if driverInstallationStatus == "Installing Spatial Speaker..." {
+                driverInstallationStatus = "Spatial Speaker is installed and ready."
+            }
+        } else if isDriverBundleInstalledOnly,
+                  driverInstallationStatus == "Installing Spatial Speaker..." {
+            driverInstallationStatus = bundledDriverUnavailableMessage
+        }
+
+        if !driverInstalled && !hasCompletedScreenRecordingStep {
             onboardingStatus = .needsOnboarding
         } else if selectedAudioSource == nil || !hasAttemptedSelectedSourceInitialization {
             onboardingStatus = .needsSourceSelection
@@ -135,7 +152,41 @@ final class SpatialAppModel: ObservableObject {
         state.onboardingStatus = onboardingStatus
         state.screenRecordingAuthorized = screenRecordingAuthorized
         refreshWidgetDisplayMode()
-        retryPendingInitializationIfNeeded(screenRecordingAuthorized: screenRecordingAuthorized)
+    }
+
+    func installBundledDriver() {
+        guard !isInstallingDriver else { return }
+
+        if isDriverInstalled {
+            driverInstallationStatus = isDriverReady
+                ? "Spatial Speaker is already installed."
+                : bundledDriverUnavailableMessage
+            refreshPermissionState()
+            return
+        }
+
+        isInstallingDriver = true
+        driverInstallationStatus = "Installing Spatial Speaker..."
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            do {
+                try await self.environment.driverInstaller.installDriver()
+                let driverBecameAvailable = await self.waitForDriverAvailability()
+                self.driverInstallationStatus = driverBecameAvailable
+                    ? "Spatial Speaker is installed and ready."
+                    : bundledDriverUnavailableMessage
+                if !driverBecameAvailable {
+                    self.presentRestartRequiredAlert()
+                }
+            } catch {
+                self.driverInstallationStatus = error.localizedDescription
+            }
+
+            self.isInstallingDriver = false
+            self.refreshPermissionState()
+        }
     }
 
     func selectAudioSource(_ source: AudioSourceOption) {
@@ -143,13 +194,12 @@ final class SpatialAppModel: ObservableObject {
         hasInitializedSelectedSource = false
         hasAttemptedSelectedSourceInitialization = false
         isWaitingForScreenRecordingAuthorization = false
+        isWaitingForScreenCapturePermission = false
         isAwaitingCaptureStart = false
-        pendingInitializationSource = nil
-        lastSpeculativeRetryDate = nil
         isWidgetManuallyExpanded = false
         logger.info("Selected audio source: \(source.rawValue, privacy: .public)")
         nowPlaying = environment.playbackMetadataService.currentNowPlaying(for: source)
-        deactivateEchoPrevention()
+        deactivateVirtualRouting()
         environment.audioCaptureService.stop()
         environment.dspEngine.stop()
         environment.demoPlaybackService.stopDemo()
@@ -161,41 +211,69 @@ final class SpatialAppModel: ObservableObject {
     func initializeSelectedSource() {
         guard let selectedAudioSource else { return }
         let target = environment.audioSourceResolver.captureTarget(for: selectedAudioSource)
-        let screenRecordingAuthorized = environment.permissionsService.isScreenRecordingAuthorized
         logger.info("Initializing source=\(selectedAudioSource.rawValue, privacy: .public) target=\(String(describing: target), privacy: .public)")
 
         hasInitializedSelectedSource = false
         hasAttemptedSelectedSourceInitialization = true
         isWaitingForScreenRecordingAuthorization = false
+        isWaitingForScreenCapturePermission = false
         isAwaitingCaptureStart = false
 
-        if targetRequiresScreenRecording(target),
-           !screenRecordingAuthorized {
-            logger.warning("Screen Recording permission was not pre-authorized at initialize time; requesting access and attempting live capture startup")
-            environment.permissionsService.requestScreenRecordingAuthorization()
+        if case .virtualDevice = target, !isDriverReady {
+            if let issue = environment.virtualAudioRoutingService.virtualDeviceIssue {
+                logger.error("Virtual device unavailable during source initialization: \(issue, privacy: .public)")
+            } else {
+                logger.error("Virtual device unavailable during source initialization with no reported issue")
+            }
+            isWaitingForScreenRecordingAuthorization = true
+            applyEngineStatus(.error(missingVirtualDeviceMessage))
+            refreshPermissionState()
+            return
         }
 
-        pendingInitializationSource = nil
         environment.dspEngine.stop()
         environment.dspEngine.configure(with: settings)
-        environment.dspEngine.start(for: selectedAudioSource)
 
         switch target {
         case .externalInput:
+            environment.dspEngine.start(for: selectedAudioSource)
             environment.audioCaptureService.stop()
             applyEngineStatus(environment.dspEngine.currentStatus)
             hasInitializedSelectedSource = true
-        case .application, .systemMix:
-            // Activate echo prevention BEFORE starting SCKit capture.
-            // SCKit audio delivery is tied to the audio routing at stream-start time.
-            // Switching the system output to BlackHole after the stream starts silently
-            // kills audio delivery without any error. Starting with BlackHole already
-            // set means SCKit captures the BlackHole-routed audio from the first buffer.
-            activateEchoPrevention()
+        case .virtualDevice:
+            guard activateVirtualRouting() else {
+                let message = isDriverReady
+                    ? "Spatial could not route macOS audio to Spatial Speaker"
+                    : missingVirtualDeviceMessage
+                applyEngineStatus(.error(message))
+                refreshPermissionState()
+                return
+            }
+            environment.dspEngine.start(for: selectedAudioSource)
             isAwaitingCaptureStart = true
             environment.audioCaptureService.prepare(for: target)
             environment.audioCaptureService.start()
             applyEngineStatus(environment.dspEngine.currentStatus)
+        case .systemMix:
+            guard isDriverReady || Self.allowUnsafeSystemAudioFallback else {
+                applyEngineStatus(.error(systemAudioRequiresSpatialSpeakerMessage))
+                refreshPermissionState()
+                return
+            }
+            guard ensureSystemAudioCaptureAccess() else {
+                refreshPermissionState()
+                return
+            }
+            if isDriverReady && !activateVirtualRouting() {
+                logger.warning("Proceeding with system-audio fallback because virtual routing activation failed")
+            }
+            environment.dspEngine.start(for: selectedAudioSource)
+            isAwaitingCaptureStart = true
+            environment.audioCaptureService.prepare(for: target)
+            environment.audioCaptureService.start()
+            applyEngineStatus(environment.dspEngine.currentStatus)
+        case .application:
+            applyEngineStatus(.error("This source must route through Spatial Speaker first"))
         }
 
         applyEngineStatus(environment.dspEngine.currentStatus)
@@ -244,6 +322,24 @@ final class SpatialAppModel: ObservableObject {
         updateSettings { $0.theme = theme }
     }
 
+    func updateMonitorOutputDeviceUID(_ uid: String?) {
+        updateSettings { $0.monitorOutputDeviceUID = uid }
+
+        guard selectedAudioSource == .systemAudio || selectedAudioSource == .spotify || selectedAudioSource == .appleMusic else {
+            return
+        }
+
+        if environment.virtualAudioRoutingService.isActive {
+            deactivateVirtualRouting()
+            _ = activateVirtualRouting()
+        } else if let uid,
+                  let liveDSPEngine = environment.dspEngine as? LiveDSPEngine,
+                  let device = environment.audioDeviceService.deviceWithUID(uid),
+                  !device.isSpatialVirtualDevice {
+            liveDSPEngine.pinOutputDevice(device.id)
+        }
+    }
+
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
         environment.launchAtLoginService.setEnabled(enabled)
         launchAtLoginEnabled = environment.launchAtLoginService.isEnabled
@@ -260,6 +356,29 @@ final class SpatialAppModel: ObservableObject {
             && !isDemoModeActive
     }
 
+    var availableMonitorOutputs: [AudioOutputDevice] {
+        environment.audioDeviceService.allOutputDevices().filter { !$0.isSpatialVirtualDevice }
+    }
+
+    var selectedMonitorOutputTitle: String {
+        if let uid = settings.monitorOutputDeviceUID,
+           let device = environment.audioDeviceService.deviceWithUID(uid),
+           !device.isSpatialVirtualDevice {
+            return device.name
+        }
+
+        if let currentOutput = environment.audioDeviceService.systemOutputDevice(),
+           !currentOutput.isSpatialVirtualDevice {
+            return "Automatic (\(currentOutput.name))"
+        }
+
+        if let firstAvailable = availableMonitorOutputs.first {
+            return "Automatic (\(firstAvailable.name))"
+        }
+
+        return "No hardware output found"
+    }
+
     var isLiveCaptureActive: Bool {
         guard environment.dspEngine.supportsLiveInputProcessing else {
             return false
@@ -269,6 +388,7 @@ final class SpatialAppModel: ObservableObject {
               state.isEnabled,
               hasInitializedSelectedSource,
               !isWaitingForScreenRecordingAuthorization,
+              !isWaitingForScreenCapturePermission,
               !isAwaitingCaptureStart else {
             return false
         }
@@ -285,17 +405,20 @@ final class SpatialAppModel: ObservableObject {
     }
 
     var liveControlsStatusText: String {
-        if let selectedAudioSource,
-           !hasAttemptedSelectedSourceInitialization {
+        if let selectedAudioSource, !hasAttemptedSelectedSourceInitialization {
             return "Start Live Audio for \(selectedAudioSource.title.replacingOccurrences(of: "\n", with: " ")) to enable realtime 8D controls."
         }
 
         if isWaitingForScreenRecordingAuthorization {
-            return "Screen Recording is required before realtime 8D controls can affect live audio."
+            return missingVirtualDeviceMessage
+        }
+
+        if isWaitingForScreenCapturePermission {
+            return screenCapturePermissionMessage
         }
 
         if isAwaitingCaptureStart {
-            return "Connecting live capture. Controls will unlock once audio starts streaming."
+            return "Connecting live capture. Controls will unlock once Spatial Speaker starts streaming."
         }
 
         if case .error(let message) = engineStatus {
@@ -343,6 +466,10 @@ final class SpatialAppModel: ObservableObject {
         }
 
         if isWaitingForScreenRecordingAuthorization {
+            return "INSTALL SPATIAL SPEAKER"
+        }
+
+        if isWaitingForScreenCapturePermission {
             return "ALLOW SCREEN RECORDING"
         }
 
@@ -375,7 +502,11 @@ final class SpatialAppModel: ObservableObject {
 
     var engineStatusText: String {
         if isWaitingForScreenRecordingAuthorization {
-            return "Permission Required"
+            return "Driver Required"
+        }
+
+        if isWaitingForScreenCapturePermission {
+            return "Screen Recording Required"
         }
 
         if isAwaitingCaptureStart {
@@ -408,7 +539,11 @@ final class SpatialAppModel: ObservableObject {
 
     var sourceSelectionButtonTitle: String {
         if isWaitingForScreenRecordingAuthorization {
-            return "Waiting for Screen Recording"
+            return "Install Spatial Speaker"
+        }
+
+        if isWaitingForScreenCapturePermission {
+            return "Open Screen Recording Settings"
         }
 
         if isAwaitingCaptureStart {
@@ -436,6 +571,10 @@ final class SpatialAppModel: ObservableObject {
         }
 
         if isWaitingForScreenRecordingAuthorization {
+            return "SPATIAL SPEAKER REQUIRED"
+        }
+
+        if isWaitingForScreenCapturePermission {
             return "SCREEN RECORDING REQUIRED"
         }
 
@@ -454,11 +593,17 @@ final class SpatialAppModel: ObservableObject {
         let selectedSourceTitle = selectedAudioSource.title.replacingOccurrences(of: "\n", with: " ")
 
         if isWaitingForScreenRecordingAuthorization {
-            return "Grant Screen Recording in System Settings, then return to Spatial. \(selectedSourceTitle) will reconnect automatically."
+            return "\(missingVirtualDeviceMessage) \(selectedSourceTitle) will reconnect after the driver is available."
+        }
+
+        if isWaitingForScreenCapturePermission {
+            return "\(screenCapturePermissionMessage) \(selectedSourceTitle) will reconnect after permission is granted."
         }
 
         if isAwaitingCaptureStart {
-            return "Connecting to live audio from \(selectedSourceTitle)."
+            return isDriverReady
+                ? "Connecting \(selectedSourceTitle) to Spatial Speaker and the 8D engine."
+                : "Connecting \(selectedSourceTitle) through the system-audio fallback and the 8D engine."
         }
 
         if case .error(let message) = engineStatus {
@@ -466,14 +611,18 @@ final class SpatialAppModel: ObservableObject {
         }
 
         if hasInitializedSelectedSource {
-            return "Live capture is active. Spotify now playing metadata is separate from the audio signal that drives the visualizer."
+            return "Live capture is active. Now playing metadata is separate from the loopback signal that drives the visualizer."
         }
 
-        return "Selecting \(selectedSourceTitle) chooses the target. Start Live Audio to capture the real signal for 8D motion and the visualizer."
+        if isDriverReady {
+            return "Selecting \(selectedSourceTitle) routes the target through Spatial Speaker so Spatial can capture the real signal for 8D motion and the visualizer."
+        }
+
+        return "Selecting \(selectedSourceTitle) captures the live system mix through ScreenCaptureKit so Spatial can drive the 8D engine and the visualizer."
     }
 
     var canStartSelectedSource: Bool {
-        selectedAudioSource != nil && !isWaitingForScreenRecordingAuthorization && !isAwaitingCaptureStart
+        selectedAudioSource != nil && !isAwaitingCaptureStart
     }
 
     var spatialTuningSummary: String {
@@ -484,14 +633,14 @@ final class SpatialAppModel: ObservableObject {
         environment.dspEngine.supportsLiveInputProcessing
             && isLiveCaptureActive
             && !isDemoModeActive
-            && !environment.echoPreventionService.isActive
+            && !environment.virtualAudioRoutingService.isActive
     }
 
     var echoRiskMessage: String {
-        if environment.echoPreventionService.blackHoleAvailable {
-            return "To avoid echo, install BlackHole and Spatial will route audio automatically."
+        if environment.virtualAudioRoutingService.virtualDeviceAvailable {
+            return "Hardware-only output may phase with the 8D signal. For the cleanest result, let Spatial route system audio through Spatial Speaker."
         }
-        return "Install BlackHole (free) so Spatial can route audio without echo. Visit existential.audio/blackhole"
+        return "Install Spatial Speaker in /Library/Audio/Plug-Ins/HAL, then restart coreaudiod or reboot for clean echo-free routing."
     }
 
     deinit {
@@ -546,7 +695,7 @@ final class SpatialAppModel: ObservableObject {
             isAwaitingCaptureStart = false
             if hasInitializedSelectedSource {
                 hasInitializedSelectedSource = false
-                deactivateEchoPrevention()
+                deactivateVirtualRouting()
                 refreshPermissionState()
                 refreshWidgetDisplayMode()
                 synchronizeDemoPlayback()
@@ -557,7 +706,7 @@ final class SpatialAppModel: ObservableObject {
         case .capturing:
             isAwaitingCaptureStart = false
             isWaitingForScreenRecordingAuthorization = false
-            pendingInitializationSource = nil
+            isWaitingForScreenCapturePermission = false
             hasInitializedSelectedSource = true
             applyEngineStatus(environment.dspEngine.currentStatus)
             refreshPermissionState()
@@ -567,13 +716,12 @@ final class SpatialAppModel: ObservableObject {
             logger.error("Capture failed before initialization completed: \(message, privacy: .public)")
             isAwaitingCaptureStart = false
             hasInitializedSelectedSource = false
-            deactivateEchoPrevention()
-            isWaitingForScreenRecordingAuthorization = isScreenRecordingPermissionError(message)
-            if isWaitingForScreenRecordingAuthorization {
-                pendingInitializationSource = selectedAudioSource
-            } else {
-                pendingInitializationSource = nil
-            }
+            deactivateVirtualRouting()
+            isWaitingForScreenRecordingAuthorization = !isDriverReady
+                && (message.localizedCaseInsensitiveContains("not installed")
+                    || message.localizedCaseInsensitiveContains("Spatial Speaker"))
+            isWaitingForScreenCapturePermission = !environment.permissionsService.isScreenRecordingAuthorized
+                && message.localizedCaseInsensitiveContains("screen")
             applyEngineStatus(.error(message))
             refreshPermissionState()
             refreshWidgetDisplayMode()
@@ -581,37 +729,30 @@ final class SpatialAppModel: ObservableObject {
         }
     }
 
-    private func activateEchoPrevention() {
-        let echoPrevention = environment.echoPreventionService
-        guard !echoPrevention.isActive else { return }
+    private func activateVirtualRouting() -> Bool {
+        let routing = environment.virtualAudioRoutingService
+        guard !routing.isActive else { return true }
 
         let liveDSPEngine = environment.dspEngine as? LiveDSPEngine
-        let activated = echoPrevention.activate { deviceID in
+        let activated = routing.activate(preferredMonitorDeviceUID: settings.monitorOutputDeviceUID) { deviceID in
             liveDSPEngine?.pinOutputDevice(deviceID)
         }
 
         if activated {
-            logger.info("Echo prevention activated — system audio routed through BlackHole")
-        } else if echoPrevention.blackHoleAvailable {
-            logger.warning("Echo prevention failed to activate despite BlackHole being present")
+            logger.info("Virtual routing activated — system audio routed through Spatial Speaker")
+        } else if routing.virtualDeviceAvailable {
+            logger.warning("Spatial Speaker is installed but routing activation failed")
         } else {
-            logger.info("Echo prevention skipped — BlackHole not installed")
+            logger.info("Virtual routing skipped — Spatial Speaker not installed")
         }
+
+        return activated
     }
 
-    private func deactivateEchoPrevention() {
-        guard environment.echoPreventionService.isActive else { return }
-        environment.echoPreventionService.deactivate()
-        logger.info("Echo prevention deactivated — system output restored")
-    }
-
-    private func targetRequiresScreenRecording(_ target: AudioCaptureTarget) -> Bool {
-        switch target {
-        case .application, .systemMix:
-            return true
-        case .externalInput:
-            return false
-        }
+    private func deactivateVirtualRouting() {
+        guard environment.virtualAudioRoutingService.isActive else { return }
+        environment.virtualAudioRoutingService.deactivate()
+        logger.info("Virtual routing deactivated — system output restored")
     }
 
     private func startPlaybackRefreshTimer() {
@@ -624,14 +765,44 @@ final class SpatialAppModel: ObservableObject {
     }
 
     private func refreshNowPlaying() {
-        nowPlaying = environment.playbackMetadataService.currentNowPlaying(for: selectedAudioSource)
-        logger.debug("Now playing refresh. source=\(self.selectedAudioSource?.rawValue ?? "none", privacy: .public) title=\(self.nowPlaying.trackName, privacy: .public) artist=\(self.nowPlaying.artistName, privacy: .public) playing=\(self.nowPlaying.isPlaying, privacy: .public) demo=\(self.isDemoModeActive, privacy: .public)")
+        let updatedNowPlaying = environment.playbackMetadataService.currentNowPlaying(for: selectedAudioSource)
+        if updatedNowPlaying != nowPlaying {
+            nowPlaying = updatedNowPlaying
+        }
+        logNowPlayingRefreshIfNeeded()
         synchronizeDemoPlayback()
         refreshWidgetDisplayMode()
-        if isWaitingForScreenRecordingAuthorization {
-            logger.debug("Polling permission state from timer (waiting for screen recording)")
-            refreshPermissionState()
+    }
+
+    private var screenCapturePermissionMessage: String {
+        "Allow Spatial in System Settings > Privacy & Security > Screen & System Audio Recording to use the system-audio fallback."
+    }
+
+    private var systemAudioRequiresSpatialSpeakerMessage: String {
+        "\(missingVirtualDeviceMessage) System-audio fallback stays off by default because it can produce dangerously distorted output on some Macs."
+    }
+
+    private func ensureSystemAudioCaptureAccess() -> Bool {
+        guard !isDriverReady else {
+            return true
         }
+
+        if environment.permissionsService.isScreenRecordingAuthorized {
+            return true
+        }
+
+        let granted = environment.permissionsService.requestScreenRecordingAuthorization()
+        refreshPermissionState()
+
+        guard granted || environment.permissionsService.isScreenRecordingAuthorized else {
+            isWaitingForScreenCapturePermission = true
+            environment.permissionsService.openScreenRecordingSettings()
+            applyEngineStatus(.error(screenCapturePermissionMessage))
+            return false
+        }
+
+        isWaitingForScreenCapturePermission = false
+        return true
     }
 
     private func refreshWidgetDisplayMode() {
@@ -647,7 +818,13 @@ final class SpatialAppModel: ObservableObject {
 
         if isWaitingForScreenRecordingAuthorization {
             state.processingState = .idle
-            state.recommendedOutput = "Allow Screen Recording, then return to Spatial"
+            state.recommendedOutput = missingVirtualDeviceMessage
+            return
+        }
+
+        if isWaitingForScreenCapturePermission {
+            state.processingState = .idle
+            state.recommendedOutput = screenCapturePermissionMessage
             return
         }
 
@@ -659,7 +836,7 @@ final class SpatialAppModel: ObservableObject {
 
         if isAwaitingCaptureStart {
             state.processingState = .idle
-            state.recommendedOutput = "Connecting to live audio capture"
+            state.recommendedOutput = "Connecting to Spatial Speaker"
             return
         }
 
@@ -668,7 +845,7 @@ final class SpatialAppModel: ObservableObject {
             if environment.dspEngine.supportsLiveInputProcessing {
                 state.processingState = .processing
                 state.recommendedOutput = hasDryWetEchoRisk
-                    ? "Echo prevention needs BlackHole or Loopback routing"
+                    ? "Hardware-only mode may phase. Spatial Speaker gives the cleanest system-audio result."
                     : "Headphones Recommended"
             } else {
                 state.processingState = .idle
@@ -704,7 +881,11 @@ final class SpatialAppModel: ObservableObject {
             && state.isEnabled
             && !nowPlaying.isPlaying
 
-        logger.debug("Synchronize demo playback. shouldUseDemo=\(shouldUseDemo, privacy: .public) initialized=\(self.hasInitializedSelectedSource, privacy: .public) enabled=\(self.state.isEnabled, privacy: .public) nowPlaying=\(self.nowPlaying.isPlaying, privacy: .public)")
+        let logSignature = "\(shouldUseDemo)|\(hasInitializedSelectedSource)|\(state.isEnabled)|\(nowPlaying.isPlaying)"
+        if logSignature != lastLoggedDemoPlaybackSignature {
+            logger.debug("Synchronize demo playback. shouldUseDemo=\(shouldUseDemo, privacy: .public) initialized=\(self.hasInitializedSelectedSource, privacy: .public) enabled=\(self.state.isEnabled, privacy: .public) nowPlaying=\(self.nowPlaying.isPlaying, privacy: .public)")
+            lastLoggedDemoPlaybackSignature = logSignature
+        }
 
         if shouldUseDemo {
             guard !environment.demoPlaybackService.isPlaying else { return }
@@ -714,47 +895,76 @@ final class SpatialAppModel: ObservableObject {
         }
     }
 
-    private func retryPendingInitializationIfNeeded(screenRecordingAuthorized: Bool) {
-        // CGPreflightScreenCaptureAccess() returns a stale cached false in-process after
-        // the user grants permission at runtime. When we're already in the waiting state,
-        // bypass the preflight and attempt speculatively — SCShareableContent.current is
-        // the authoritative check and will succeed if permission was actually granted.
-        let isSpeculativeBypass = isWaitingForScreenRecordingAuthorization && !screenRecordingAuthorized
-        let canAttempt = screenRecordingAuthorized || isWaitingForScreenRecordingAuthorization
+    private func logNowPlayingRefreshIfNeeded() {
+        guard nowPlaying != lastLoggedNowPlayingSnapshot else { return }
+        logger.debug("Now playing refresh. source=\(self.selectedAudioSource?.rawValue ?? "none", privacy: .public) title=\(self.nowPlaying.trackName, privacy: .public) artist=\(self.nowPlaying.artistName, privacy: .public) playing=\(self.nowPlaying.isPlaying, privacy: .public) demo=\(self.isDemoModeActive, privacy: .public)")
+        lastLoggedNowPlayingSnapshot = nowPlaying
+    }
 
-        guard canAttempt,
-              let pendingInitializationSource,
-              pendingInitializationSource == selectedAudioSource,
-              !hasInitializedSelectedSource,
-              !isAwaitingCaptureStart,
-              !isRetryingPendingInitialization else {
-            return
+    private var missingVirtualDeviceMessage: String {
+        if let issue = environment.virtualAudioRoutingService.virtualDeviceIssue {
+            return issue
         }
 
-        // Rate-limit speculative retries to avoid a tight retry loop while permission
-        // is still denied. Each failure immediately triggers this path via
-        // handleCaptureStateChange(.failed) → refreshPermissionState(), so without
-        // throttling the retry fires again before SCShareableContent.current returns.
-        if isSpeculativeBypass {
-            let now = Date()
-            if let last = lastSpeculativeRetryDate, now.timeIntervalSince(last) < 5 {
-                logger.debug("Retry throttled: last speculative attempt was \(now.timeIntervalSince(last), format: .fixed(precision: 1), privacy: .public)s ago")
-                return
+        if isDriverBundleInstalledOnly {
+            return bundledDriverUnavailableMessage
+        }
+
+        return "Install Spatial Speaker to let Spatial route and capture system audio."
+    }
+
+    private var bundledDriverUnavailableMessage: String {
+        "Spatial copied the driver bundle, but macOS still does not see a usable Spatial Speaker device yet. Restart Core Audio or reboot, then check for conflicting HAL installs if it still does not appear."
+    }
+
+    private func waitForDriverAvailability() async -> Bool {
+        environment.audioDeviceService.invalidateSpatialVirtualDeviceReadinessCache()
+        refreshPermissionState()
+        if environment.virtualAudioRoutingService.virtualDeviceAvailable {
+            return true
+        }
+
+        // Allow coreaudiod time to relaunch and enumerate the newly installed HAL bundle.
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+
+        for _ in 0..<30 {
+            environment.audioDeviceService.invalidateSpatialVirtualDeviceReadinessCache()
+            refreshPermissionState()
+            if environment.virtualAudioRoutingService.virtualDeviceAvailable {
+                return true
             }
-            lastSpeculativeRetryDate = now
+
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        logger.info("Retrying pending live capture for source=\(pendingInitializationSource.rawValue, privacy: .public) speculativeBypass=\(isSpeculativeBypass, privacy: .public)")
-        isRetryingPendingInitialization = true
-        defer { isRetryingPendingInitialization = false }
-        initializeSelectedSource()
+        return false
     }
 
-    private var screenRecordingPermissionMessage: String {
-        "Allow Screen Recording for Spatial in System Settings"
+    private func presentRestartRequiredAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Spatial Speaker Not Available"
+        alert.informativeText = "Spatial copied the driver bundle, but macOS still does not see a usable Spatial Speaker output device yet. Restart Core Audio or reboot first. If it still does not appear, remove conflicting HAL driver installs and reinstall Spatial Speaker."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Restart Anyway")
+
+        let response = alert.runModal()
+        guard response == .alertSecondButtonReturn else { return }
+        requestSystemRestart()
     }
 
-    private func isScreenRecordingPermissionError(_ message: String) -> Bool {
-        message.localizedCaseInsensitiveContains("screen recording")
+    private func requestSystemRestart() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e",
+            "tell application \"System Events\" to restart"
+        ]
+
+        do {
+            try process.run()
+        } catch {
+            logger.error("Failed to request system restart: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

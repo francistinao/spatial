@@ -33,7 +33,7 @@ struct SourceSelectionView: View {
     private var notchBar: some View {
         HStack(spacing: 18) {
             Image(systemName: "waveform")
-                .font(.system(size: 13, weight: .medium))
+                .font(SpatialTypography.text(13))
                 .foregroundStyle(Color.white.opacity(0.82))
 
             Circle()
@@ -41,7 +41,7 @@ struct SourceSelectionView: View {
                 .frame(width: 8, height: 8)
 
             Image(systemName: "bell.slash")
-                .font(.system(size: 12, weight: .medium))
+                .font(SpatialTypography.text(12))
                 .foregroundStyle(Color.white.opacity(0.78))
         }
         .padding(.horizontal, 28)
@@ -74,7 +74,13 @@ struct SourceSelectionView: View {
         .frame(width: 476)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(hex: 0x353535))
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0x1D1D1D), Color(hex: 0x171717), Color(hex: 0x131313)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -105,18 +111,18 @@ struct SourceSelectionView: View {
                 )
                 .overlay(
                     Image(systemName: "waveform.path")
-                        .font(.system(size: 22, weight: .medium))
+                        .font(SpatialTypography.text(22))
                         .foregroundStyle(SpatialColor.textSecondary.opacity(0.55))
                 )
                 .frame(width: 48, height: 48)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(headerTitle)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SpatialTypography.text(14))
                     .foregroundStyle(SpatialColor.textPrimary)
 
                 Text(headerSubtitle)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SpatialTypography.header(11))
                     .tracking(1.4)
                     .foregroundStyle(SpatialColor.textSecondary)
             }
@@ -124,7 +130,7 @@ struct SourceSelectionView: View {
             Spacer()
 
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 15, weight: .medium))
+                .font(SpatialTypography.text(15))
                 .foregroundStyle(SpatialColor.textSecondary)
         }
     }
@@ -134,14 +140,14 @@ struct SourceSelectionView: View {
             HStack(spacing: 16) {
                 SignalGlyph(flipped: false)
                 Text(model.sourceSelectionBannerTitle)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(SpatialTypography.mono)
                     .tracking(0.8)
                     .foregroundStyle(SpatialColor.textSecondary)
                 SignalGlyph(flipped: true)
             }
 
             Text(model.sourceSelectionStatusText)
-                .font(.system(size: 11, weight: .medium))
+                .font(SpatialTypography.text(11))
                 .foregroundStyle(SpatialColor.textSecondary.opacity(0.92))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -158,14 +164,14 @@ struct SourceSelectionView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("SELECT AUDIO SOURCE")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SpatialTypography.header(14))
                     .tracking(0.8)
                     .foregroundStyle(SpatialColor.textPrimary)
 
                 Spacer()
 
                 Text("4 ACTIVE")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SpatialTypography.header(11))
                     .foregroundStyle(SpatialColor.accentLight)
             }
 
@@ -192,7 +198,7 @@ struct SourceSelectionView: View {
                     Image(systemName: "gearshape")
                     Text("Configuration")
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(SpatialTypography.text(13))
                 .foregroundStyle(SpatialColor.textSecondary)
             }
             .buttonStyle(.plain)
@@ -201,7 +207,7 @@ struct SourceSelectionView: View {
 
             Button(action: onInitialize) {
                 Text(model.sourceSelectionButtonTitle)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SpatialTypography.text(14))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 12)
@@ -238,7 +244,7 @@ struct SourceSelectionView: View {
         }
 
         if model.isWaitingForScreenRecordingAuthorization {
-            return "Screen Recording Needed"
+            return model.isDriverBundleInstalledOnly ? "Spatial Speaker Unavailable" : "Spatial Speaker Needed"
         }
 
         if model.isStartingSelectedSource {
@@ -308,18 +314,18 @@ private struct AudioSourceCard: View {
                         .frame(width: 42, height: 42)
 
                     Image(systemName: source.symbolName)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(SpatialTypography.text(18))
                         .foregroundStyle(isSelected ? Color.black.opacity(0.7) : source.statusTint)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(source.title)
-                        .font(.system(size: source == .systemAudio ? 13 : 15, weight: .semibold, design: .rounded))
+                        .font(SpatialTypography.header(source == .systemAudio ? 13 : 15))
                         .foregroundStyle(SpatialColor.textPrimary)
                         .multilineTextAlignment(.leading)
 
                     Text(source.subtitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(SpatialTypography.text(11))
                         .foregroundStyle(SpatialColor.textSecondary)
                 }
 

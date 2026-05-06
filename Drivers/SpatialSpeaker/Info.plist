@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Spatial Speaker</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>AudioServerPlugIn</key>
+	<true/>
+	<key>CFPlugInDynamicRegistration</key>
+	<string>NO</string>
+		<key>CFPlugInFactories</key>
+		<dict>
+			<key>B79D801D-85D5-4259-8A5E-11A0B0B17C8F</key>
+			<string>SpatialSpeaker_Create</string>
+			<key>F8BB1C28-BAE8-11D6-9C31-00039315CD46</key>
+			<string>SpatialSpeaker_Create</string>
+		</dict>
+		<key>CFPlugInTypes</key>
+		<dict>
+			<key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
+			<array>
+				<string>B79D801D-85D5-4259-8A5E-11A0B0B17C8F</string>
+			</array>
+			<key>F8BB1C28-BAE8-11D6-9C31-00039315CD46</key>
+			<array>
+				<string>B79D801D-85D5-4259-8A5E-11A0B0B17C8F</string>
+			</array>
+		</dict>
+	</dict>
+</plist>

@@ -2,9 +2,11 @@ import AppKit
 import Foundation
 import OSLog
 
-struct StubPlaybackMetadataService: PlaybackMetadataService {
+final class StubPlaybackMetadataService: PlaybackMetadataService {
     private let logger = Logger(subsystem: "com.spatial.app", category: "NowPlaying")
     private let fallback = MockData.previewNowPlaying
+    private var lastLoggedSystemAudioSignature: String?
+    private var lastLoggedBrowserTabSignature: String?
 
     func currentNowPlaying(for selectedSource: AudioSourceOption?) -> NowPlayingInfo {
         guard let selectedSource else {
@@ -101,12 +103,12 @@ struct StubPlaybackMetadataService: PlaybackMetadataService {
 
     private func systemAudioInfo() -> NowPlayingInfo {
         if let browserInfo = browserSystemAudioInfo() {
-            logger.info("System audio mapped to browser metadata: \(browserInfo.trackName, privacy: .public) by \(browserInfo.artistName, privacy: .public)")
+            logSystemAudioMappingIfNeeded(for: browserInfo)
             return browserInfo
         }
 
         let fallbackApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "System Audio"
-        logger.debug("System audio fallback metadata using frontmost app: \(fallbackApp, privacy: .public)")
+        logSystemAudioFallbackIfNeeded(appName: fallbackApp)
         return NowPlayingInfo(
             trackName: "System Output Ready",
             artistName: fallbackApp,
@@ -127,7 +129,8 @@ struct StubPlaybackMetadataService: PlaybackMetadataService {
 
         for browser in browsers where isRunning(bundleIdentifier: browser.bundleIdentifier) {
             if let title = browserTabTitle(appName: browser.name), !title.isEmpty {
-                logger.debug("Detected browser tab title from \(browser.name, privacy: .public): \(title, privacy: .public)")
+                guard isLikelyMediaTabTitle(title) else { continue }
+                logBrowserTabDetectionIfNeeded(browserName: browser.name, title: title)
                 return NowPlayingInfo(
                     trackName: normalizedTrackTitle(from: title),
                     artistName: browser.name,
@@ -140,6 +143,30 @@ struct StubPlaybackMetadataService: PlaybackMetadataService {
         }
 
         return nil
+    }
+
+    private func isLikelyMediaTabTitle(_ title: String) -> Bool {
+        let loweredTitle = title.lowercased()
+        let mediaMarkers = [
+            "youtube",
+            "youtube music",
+            "spotify",
+            "soundcloud",
+            "bandcamp",
+            "netflix",
+            "twitch",
+            "vimeo",
+            "deezer",
+            "tidal",
+            "pandora",
+            "apple music",
+            "prime video",
+            "disney+",
+            "hulu",
+            "crunchyroll"
+        ]
+
+        return mediaMarkers.contains { loweredTitle.contains($0) }
     }
 
     private func browserTabTitle(appName: String) -> String? {
@@ -175,6 +202,27 @@ struct StubPlaybackMetadataService: PlaybackMetadataService {
 
     private func isRunning(bundleIdentifier: String) -> Bool {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty == false
+    }
+
+    private func logBrowserTabDetectionIfNeeded(browserName: String, title: String) {
+        let signature = "\(browserName)|\(title)"
+        guard signature != lastLoggedBrowserTabSignature else { return }
+        logger.debug("Detected browser tab title from \(browserName, privacy: .public): \(title, privacy: .public)")
+        lastLoggedBrowserTabSignature = signature
+    }
+
+    private func logSystemAudioMappingIfNeeded(for nowPlaying: NowPlayingInfo) {
+        let signature = "browser|\(nowPlaying.trackName)|\(nowPlaying.artistName)"
+        guard signature != lastLoggedSystemAudioSignature else { return }
+        logger.info("System audio mapped to browser metadata: \(nowPlaying.trackName, privacy: .public) by \(nowPlaying.artistName, privacy: .public)")
+        lastLoggedSystemAudioSignature = signature
+    }
+
+    private func logSystemAudioFallbackIfNeeded(appName: String) {
+        let signature = "fallback|\(appName)"
+        guard signature != lastLoggedSystemAudioSignature else { return }
+        logger.debug("System audio fallback metadata using frontmost app: \(appName, privacy: .public)")
+        lastLoggedSystemAudioSignature = signature
     }
 
     private func appleScriptValue(_ source: String) -> String? {

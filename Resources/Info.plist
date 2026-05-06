@@ -30,5 +30,7 @@
 	<string>Spatial uses Screen Recording access to capture your system audio output in real time. No screen content is captured or stored.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Spatial uses Apple Events for future now playing integrations such as Spotify metadata.</string>
+	<key>ATSApplicationFontsPath</key>
+	<string>Fonts</string>
 </dict>
 </plist>

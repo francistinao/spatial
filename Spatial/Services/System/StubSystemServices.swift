@@ -8,8 +8,9 @@ final class SystemAudioPermissionsService: PermissionsService {
         CGPreflightScreenCaptureAccess()
     }
 
-    func requestScreenRecordingAuthorization() {
-        _ = CGRequestScreenCaptureAccess()
+    @discardableResult
+    func requestScreenRecordingAuthorization() -> Bool {
+        CGRequestScreenCaptureAccess()
     }
 
     func openScreenRecordingSettings() {
@@ -26,7 +27,9 @@ final class StubPermissionsService: PermissionsService {
         true
     }
 
-    func requestScreenRecordingAuthorization() {
+    @discardableResult
+    func requestScreenRecordingAuthorization() -> Bool {
+        true
     }
 
     func openScreenRecordingSettings() {

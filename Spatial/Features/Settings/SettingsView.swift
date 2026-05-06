@@ -25,6 +25,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 sourceSection
+                monitorOutputSection
                 presetSection
                 themeSection
                 launchSection
@@ -49,13 +50,13 @@ struct SettingsView: View {
     private var header: some View {
         HStack {
             Text("Settings")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(SpatialTypography.header(14))
                 .foregroundStyle(SpatialColor.textPrimary)
 
             Spacer()
 
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 15, weight: .semibold))
+                .font(SpatialTypography.header(15))
                 .foregroundStyle(SpatialColor.textSecondary)
         }
         .padding(.horizontal, 20)
@@ -74,14 +75,14 @@ struct SettingsView: View {
 
             HStack {
                 Text(model.selectedSourceTitle)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SpatialTypography.header(14))
                     .foregroundStyle(SpatialColor.textPrimary)
                     .lineLimit(1)
 
                 Spacer()
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(SpatialTypography.header(11))
                     .foregroundStyle(SpatialColor.accentLight)
             }
             .padding(.horizontal, 14)
@@ -105,7 +106,7 @@ struct SettingsView: View {
                 ForEach(model.presets) { preset in
                     Button(action: { model.selectPreset(preset.kind) }) {
                         Text(preset.kind.displayName)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(SpatialTypography.header(12))
                             .foregroundStyle(
                                 model.selectedPreset == preset.kind
                                     ? Color.white
@@ -134,6 +135,63 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var monitorOutputSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("8D monitor output")
+
+            Menu {
+                Button(action: { model.updateMonitorOutputDeviceUID(nil) }) {
+                    if model.settings.monitorOutputDeviceUID == nil {
+                        Label("Automatic", systemImage: "checkmark")
+                    } else {
+                        Text("Automatic")
+                    }
+                }
+
+                ForEach(model.availableMonitorOutputs, id: \.uid) { device in
+                    Button(action: { model.updateMonitorOutputDeviceUID(device.uid) }) {
+                        if model.settings.monitorOutputDeviceUID == device.uid {
+                            Label(device.name, systemImage: "checkmark")
+                        } else {
+                            Text(device.name)
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.selectedMonitorOutputTitle)
+                            .font(SpatialTypography.header(13))
+                            .foregroundStyle(SpatialColor.textPrimary)
+                            .lineLimit(1)
+
+                        Text("Spatial Speaker receives the dry system audio while Spatial plays the tuned 8D signal here.")
+                            .font(SpatialTypography.text(10))
+                            .foregroundStyle(SpatialColor.textSecondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(SpatialTypography.header(11))
+                        .foregroundStyle(SpatialColor.accentLight)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black.opacity(0.50))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -168,7 +226,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Launch at login")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(SpatialTypography.header(13))
                     .foregroundStyle(SpatialColor.textPrimary.opacity(0.88))
 
                 Spacer()
@@ -188,10 +246,10 @@ struct SettingsView: View {
             Button(action: quitApplication) {
                 HStack(spacing: 8) {
                     Image(systemName: "power")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(SpatialTypography.header(11))
 
                     Text("Quit")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(SpatialTypography.header(11))
                 }
                 .foregroundStyle(Color.white.opacity(0.92))
                 .padding(.horizontal, 12)
@@ -210,7 +268,7 @@ struct SettingsView: View {
             Spacer()
 
             Text("Spatial 1.0.0")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(SpatialTypography.text(11))
                 .foregroundStyle(SpatialColor.textTertiary)
 
             Spacer()
@@ -220,7 +278,7 @@ struct SettingsView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(SpatialTypography.header(11))
             .tracking(0.8)
             .foregroundStyle(SpatialColor.textSecondary.opacity(0.95))
     }

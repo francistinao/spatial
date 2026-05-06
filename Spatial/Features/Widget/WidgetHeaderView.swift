@@ -6,9 +6,15 @@ struct WidgetHeaderView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            Image("logo")
+                .resizable()
+                .renderingMode(.template)
+                .foregroundStyle(SpatialColor.textPrimary)
+                .frame(width: 20, height: 20)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("SPATIAL")
-                    .font(.system(size: 17, weight: .bold, design: .default))
+                    .font(SpatialTypography.header(17))
                     .foregroundStyle(SpatialColor.textPrimary)
                     .tracking(1.3)
 

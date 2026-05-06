@@ -77,20 +77,12 @@ final class StatusBarController: NSObject {
     }
 
     private var statusImage: NSImage? {
-        let symbolName: String
-
-        switch appModel.state.processingState {
-        case .processing:
-            symbolName = "waveform.path.ecg.rectangle.fill"
-        case .idle:
-            symbolName = appModel.state.isEnabled ? "dot.radiowaves.left.and.right" : "circle.dashed"
-        }
-
-        let image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: "Spatial menu bar icon"
-        )
-        image?.isTemplate = false
+        guard let url = Bundle.main.url(forResource: "logo", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        let targetHeight: CGFloat = 18
+        let aspect = image.size.width / image.size.height
+        image.size = NSSize(width: targetHeight * aspect, height: targetHeight)
+        image.isTemplate = true
         return image
     }
 

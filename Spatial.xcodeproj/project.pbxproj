@@ -52,7 +52,36 @@
 		A00000350000000000000000 /* StubPlaybackMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000350000000000000001 /* StubPlaybackMetadataService.swift */; };
 		A00000360000000000000000 /* PresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000360000000000000001 /* PresetStore.swift */; };
 		A00000370000000000000000 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000370000000000000001 /* Assets.xcassets */; };
+		A00000F10000000000000000 /* Helvetica-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A00000F10000000000000001 /* Helvetica-Bold.ttf */; };
+		A00000F20000000000000000 /* Poppins-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A00000F20000000000000001 /* Poppins-Regular.ttf */; };
+		A00000F40000000000000000 /* logo.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000F40000000000000001 /* logo.png */; };
+		A00000C10000000000000000 /* SpatialSpeaker.driver in Embed Drivers */ = {isa = PBXBuildFile; fileRef = B00000140000000000000000 /* SpatialSpeaker.driver */; };
+		B00000010000000000000000 /* SpatialSpeakerDriver.c in Sources */ = {isa = PBXBuildFile; fileRef = B00000110000000000000000 /* SpatialSpeakerDriver.c */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000C30000000000000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000550000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B00000340000000000000000;
+			remoteInfo = SpatialSpeaker;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A00000C00000000000000000 /* Embed Drivers */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A00000C10000000000000000 /* SpatialSpeaker.driver in Embed Drivers */,
+			);
+			name = "Embed Drivers";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A00000110000000000000000 /* SpatialApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialApp.swift; sourceTree = "<group>"; };
@@ -100,11 +129,25 @@
 		A00000350000000000000001 /* StubPlaybackMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubPlaybackMetadataService.swift; sourceTree = "<group>"; };
 		A00000360000000000000001 /* PresetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetStore.swift; sourceTree = "<group>"; };
 		A00000370000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00000F10000000000000001 /* Helvetica-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Helvetica-Bold.ttf"; sourceTree = "<group>"; };
+		A00000F20000000000000001 /* Poppins-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Poppins-Regular.ttf"; sourceTree = "<group>"; };
+		A00000F40000000000000001 /* logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "logo.png"; sourceTree = "<group>"; };
 		A00000380000000000000001 /* Spatial.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Spatial.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000110000000000000000 /* SpatialSpeakerDriver.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SpatialSpeakerDriver.c; sourceTree = "<group>"; };
+		B00000120000000000000000 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B00000130000000000000000 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		B00000140000000000000000 /* SpatialSpeaker.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = SpatialSpeaker.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A00000390000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B00000310000000000000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -118,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000400000000000000001 /* Spatial */,
+				B00000210000000000000000 /* Drivers */,
 				A00000410000000000000001 /* Resources */,
 				A000003B0000000000000001 /* Products */,
 			);
@@ -127,8 +171,27 @@
 			isa = PBXGroup;
 			children = (
 				A00000380000000000000001 /* Spatial.app */,
+				B00000140000000000000000 /* SpatialSpeaker.driver */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B00000210000000000000000 /* Drivers */ = {
+			isa = PBXGroup;
+			children = (
+				B00000220000000000000000 /* SpatialSpeaker */,
+			);
+			path = Drivers;
+			sourceTree = "<group>";
+		};
+		B00000220000000000000000 /* SpatialSpeaker */ = {
+			isa = PBXGroup;
+			children = (
+				B00000110000000000000000 /* SpatialSpeakerDriver.c */,
+				B00000120000000000000000 /* Info.plist */,
+				B00000130000000000000000 /* README.md */,
+			);
+			path = SpatialSpeaker;
 			sourceTree = "<group>";
 		};
 		A00000400000000000000001 /* Spatial */ = {
@@ -146,8 +209,27 @@
 			isa = PBXGroup;
 			children = (
 				A00000370000000000000001 /* Assets.xcassets */,
+				A00000F30000000000000001 /* Fonts */,
+				A00000F50000000000000001 /* Brand */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A00000F50000000000000001 /* Brand */ = {
+			isa = PBXGroup;
+			children = (
+				A00000F40000000000000001 /* logo.png */,
+			);
+			path = Brand;
+			sourceTree = "<group>";
+		};
+		A00000F30000000000000001 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				A00000F10000000000000001 /* Helvetica-Bold.ttf */,
+				A00000F20000000000000001 /* Poppins-Regular.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		A00000420000000000000001 /* SpatialApp */ = {
@@ -336,15 +418,34 @@
 				A00000530000000000000001 /* Sources */,
 				A00000390000000000000001 /* Frameworks */,
 				A00000540000000000000001 /* Resources */,
+				A00000C00000000000000000 /* Embed Drivers */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A00000C40000000000000000 /* PBXTargetDependency */,
 			);
 			name = Spatial;
 			productName = Spatial;
 			productReference = A00000380000000000000001 /* Spatial.app */;
 			productType = "com.apple.product-type.application";
+		};
+		B00000340000000000000000 /* SpatialSpeaker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B00000370000000000000000 /* Build configuration list for PBXNativeTarget "SpatialSpeaker" */;
+			buildPhases = (
+				B00000330000000000000000 /* Sources */,
+				B00000310000000000000000 /* Frameworks */,
+				B00000320000000000000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpatialSpeaker;
+			productName = SpatialSpeaker;
+			productReference = B00000140000000000000000 /* SpatialSpeaker.driver */;
+			productType = "com.apple.product-type.bundle";
 		};
 /* End PBXNativeTarget section */
 
@@ -357,6 +458,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A00000520000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					B00000340000000000000000 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -375,6 +479,7 @@
 			projectRoot = "";
 			targets = (
 				A00000520000000000000001 /* Spatial */,
+				B00000340000000000000000 /* SpatialSpeaker */,
 			);
 		};
 /* End PBXProject section */
@@ -385,6 +490,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000370000000000000000 /* Assets.xcassets in Resources */,
+				A00000F10000000000000000 /* Helvetica-Bold.ttf in Resources */,
+				A00000F20000000000000000 /* Poppins-Regular.ttf in Resources */,
+				A00000F40000000000000000 /* logo.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B00000320000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -442,7 +557,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B00000330000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000010000000000000000 /* SpatialSpeakerDriver.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000C40000000000000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B00000340000000000000000 /* SpatialSpeaker */;
+			targetProxy = A00000C30000000000000000 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00000570000000000000001 /* Debug */ = {
@@ -489,6 +620,42 @@
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B00000350000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "$(SPATIAL_CODESIGN_IDENTITY)";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "$(SPATIAL_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Drivers/SpatialSpeaker/Info.plist;
+				MACH_O_TYPE = mh_bundle;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_CODE_SIGN_FLAGS = "$(SPATIAL_OTHER_CODE_SIGN_FLAGS)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.spatial.app.driver.speaker;
+				PRODUCT_NAME = SpatialSpeaker;
+				SDKROOT = macosx;
+				WRAPPER_EXTENSION = driver;
+			};
+			name = Debug;
+		};
+		B00000360000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "$(SPATIAL_CODESIGN_IDENTITY)";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "$(SPATIAL_DEVELOPMENT_TEAM)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Drivers/SpatialSpeaker/Info.plist;
+				MACH_O_TYPE = mh_bundle;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_CODE_SIGN_FLAGS = "$(SPATIAL_OTHER_CODE_SIGN_FLAGS)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.spatial.app.driver.speaker;
+				PRODUCT_NAME = SpatialSpeaker;
+				SDKROOT = macosx;
+				WRAPPER_EXTENSION = driver;
 			};
 			name = Release;
 		};
@@ -543,6 +710,15 @@
 			buildConfigurations = (
 				A00000570000000000000001 /* Debug */,
 				A00000590000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B00000370000000000000000 /* Build configuration list for PBXNativeTarget "SpatialSpeaker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B00000350000000000000000 /* Debug */,
+				B00000360000000000000000 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

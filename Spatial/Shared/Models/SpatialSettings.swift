@@ -70,6 +70,7 @@ struct SpatialSettings: Codable, Equatable {
     var speed: Double
     var elevation: Double
     var theme: SpatialTheme = .violet
+    var monitorOutputDeviceUID: String? = nil
 
     static let `default` = SpatialPreset.classic.settings
 }

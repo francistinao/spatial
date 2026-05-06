@@ -6,12 +6,14 @@ struct AppEnvironment {
     let dspEngine: DSPEngine
     let demoPlaybackService: DemoPlaybackService
     let playbackMetadataService: PlaybackMetadataService
-    let permissionsService: PermissionsService
     let launchAtLoginService: LaunchAtLoginService
     let presetStore: PresetStore
     let settingsStore: SettingsStore
     let outputDeviceObserver: OutputDeviceObserving
-    let echoPreventionService: EchoPreventionService
+    let virtualAudioRoutingService: VirtualAudioRoutingService
+    let audioDeviceService: AudioDeviceService
+    let permissionsService: PermissionsService
+    let driverInstaller: SpatialDriverInstalling
 
     static func makeDefault() -> AppEnvironment {
         let settingsStore = InMemorySettingsStore()
@@ -19,21 +21,24 @@ struct AppEnvironment {
         let livePipeline = LiveAudioPipelineBridge()
         let liveDSPEngine = LiveDSPEngine(pipeline: livePipeline)
         let audioDeviceService = AudioDeviceService()
-        let echoPrevention = BlackHoleEchoPreventionService(deviceService: audioDeviceService)
-        echoPrevention.restoreOnLaunchIfNeeded()
+        let virtualAudioRoutingService = SpatialVirtualAudioRoutingService(deviceService: audioDeviceService)
+        let driverInstaller = BundledSpatialDriverInstaller()
+        virtualAudioRoutingService.restoreOnLaunchIfNeeded()
 
         return AppEnvironment(
-            audioCaptureService: LiveAudioCaptureService(pipeline: livePipeline),
+            audioCaptureService: LiveAudioCaptureService(pipeline: livePipeline, deviceService: audioDeviceService),
             audioSourceResolver: DefaultAudioSourceResolver(),
             dspEngine: liveDSPEngine,
             demoPlaybackService: SystemDemoPlaybackService(),
             playbackMetadataService: StubPlaybackMetadataService(),
-            permissionsService: SystemAudioPermissionsService(),
             launchAtLoginService: StubLaunchAtLoginService(),
             presetStore: presetStore,
             settingsStore: settingsStore,
             outputDeviceObserver: StubOutputDeviceObserver(),
-            echoPreventionService: echoPrevention
+            virtualAudioRoutingService: virtualAudioRoutingService,
+            audioDeviceService: audioDeviceService,
+            permissionsService: SystemAudioPermissionsService(),
+            driverInstaller: driverInstaller
         )
     }
 }

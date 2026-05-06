@@ -21,8 +21,8 @@ struct WidgetVisualizerSectionView: View {
                 Spacer()
 
                 PillBadge(
-                    title: model.state.screenRecordingAuthorized ? "READY" : "SETUP",
-                    tint: model.state.screenRecordingAuthorized ? SpatialColor.activeGreen : SpatialColor.accent
+                    title: model.isDriverReady ? "READY" : "SETUP",
+                    tint: model.isDriverReady ? SpatialColor.activeGreen : SpatialColor.accent
                 )
             }
         }

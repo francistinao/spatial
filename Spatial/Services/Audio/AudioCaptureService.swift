@@ -12,6 +12,7 @@ enum AudioCaptureTarget: Equatable {
     case application(bundleIdentifier: String, displayName: String)
     case systemMix
     case externalInput(name: String)
+    case virtualDevice(uid: String, name: String)
 }
 
 protocol AudioSourceResolving {
@@ -22,9 +23,15 @@ struct DefaultAudioSourceResolver: AudioSourceResolving {
     func captureTarget(for source: AudioSourceOption) -> AudioCaptureTarget {
         switch source {
         case .spotify:
-            return .application(bundleIdentifier: "com.spotify.client", displayName: "Spotify")
+            return .virtualDevice(
+                uid: AudioDeviceService.spatialVirtualDeviceUID,
+                name: AudioDeviceService.spatialVirtualDeviceName
+            )
         case .appleMusic:
-            return .application(bundleIdentifier: "com.apple.Music", displayName: "Apple Music")
+            return .virtualDevice(
+                uid: AudioDeviceService.spatialVirtualDeviceUID,
+                name: AudioDeviceService.spatialVirtualDeviceName
+            )
         case .systemAudio:
             return .systemMix
         case .externalInput:

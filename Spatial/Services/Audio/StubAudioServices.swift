@@ -209,13 +209,13 @@ final class SystemDemoPlaybackService: NSObject, DemoPlaybackService, AVAudioPla
 
 final class LiveAudioPipelineBridge {
     private let lock = NSLock()
-    private var sampleBufferHandler: ((CMSampleBuffer) -> Void)?
+    private var pcmBufferHandler: ((AVAudioPCMBuffer) -> Void)?
     private var captureStartedHandler: (() -> Void)?
     private var captureErrorHandler: ((String) -> Void)?
 
-    func setSampleBufferHandler(_ handler: ((CMSampleBuffer) -> Void)?) {
+    func setPCMBufferHandler(_ handler: ((AVAudioPCMBuffer) -> Void)?) {
         lock.lock()
-        sampleBufferHandler = handler
+        pcmBufferHandler = handler
         lock.unlock()
     }
 
@@ -231,11 +231,11 @@ final class LiveAudioPipelineBridge {
         lock.unlock()
     }
 
-    func deliver(_ sampleBuffer: CMSampleBuffer) {
+    func deliver(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
-        let handler = sampleBufferHandler
+        let handler = pcmBufferHandler
         lock.unlock()
-        handler?(sampleBuffer)
+        handler?(buffer)
     }
 
     func notifyCaptureStarted() {
@@ -253,13 +253,17 @@ final class LiveAudioPipelineBridge {
     }
 }
 
-final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutput, SCStreamDelegate {
+final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     private let logger = Logger(subsystem: "com.spatial.app", category: "LiveAudioCapture")
+    private let captureStartTimeout: TimeInterval = 6
     private let pipeline: LiveAudioPipelineBridge
-    private let sampleQueue = DispatchQueue(label: "com.spatial.app.capture-samples", qos: .userInitiated)
-    private var stream: SCStream?
+    private let deviceService: AudioDeviceService
+    private let captureQueue = DispatchQueue(label: "com.spatial.app.device-capture", qos: .userInteractive)
+    private var audioUnit: AudioUnit?
+    private var screenCaptureSession: SystemAudioScreenCaptureSession?
+    private var activeDeviceID: AudioDeviceID?
+    private var captureFormat: AVAudioFormat?
     private var startToken = UUID()
-    private var isStopping = false
 
     private(set) var captureState: AudioCaptureState = .idle {
         didSet {
@@ -269,8 +273,9 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
     private(set) var target: AudioCaptureTarget?
     var onStateChange: ((AudioCaptureState) -> Void)?
 
-    init(pipeline: LiveAudioPipelineBridge) {
+    init(pipeline: LiveAudioPipelineBridge, deviceService: AudioDeviceService) {
         self.pipeline = pipeline
+        self.deviceService = deviceService
     }
 
     func prepare(for target: AudioCaptureTarget) {
@@ -289,9 +294,10 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
         let token = UUID()
         startToken = token
         logger.info("Requested live capture start for target: \(String(describing: target), privacy: .public)")
+        scheduleCaptureStartTimeout(for: target, token: token)
 
-        Task {
-            await startCapture(for: target, token: token)
+        captureQueue.async { [weak self] in
+            self?.startCapture(for: target, token: token)
         }
     }
 
@@ -300,43 +306,20 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
         startToken = token
         logger.info("Requested live capture stop")
 
-        Task {
-            await stopCurrentStream(updatingState: true)
+        captureQueue.async { [weak self] in
+            self?.stopCurrentCapture(updatingState: true)
         }
     }
 
-    private func startCapture(for target: AudioCaptureTarget, token: UUID) async {
+    private func startCapture(for target: AudioCaptureTarget, token: UUID) {
         logger.debug("Beginning live capture setup for target: \(String(describing: target), privacy: .public)")
-        await stopCurrentStream(updatingState: false)
+        stopCurrentCapture(updatingState: false)
 
         do {
-            logger.debug("Loading shareable content for live capture")
-            let shareableContent = try await loadShareableContent()
-            guard token == startToken else { return }
-
-            logger.debug("Creating ScreenCaptureKit content filter")
-            let contentFilter = try makeContentFilter(for: target, shareableContent: shareableContent)
-            let configuration = makeStreamConfiguration()
-            let stream = SCStream(filter: contentFilter, configuration: configuration, delegate: self)
-
-            do {
-                try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
-                try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-            } catch {
-                throw NSError(domain: "Spatial.LiveAudioCapture", code: -1000, userInfo: [
-                    NSLocalizedDescriptionKey: "Unable to attach stream outputs: \(error.localizedDescription)"
-                ])
-            }
-
-            self.stream = stream
-            logger.debug("Starting ScreenCaptureKit stream")
-            try await startCapture(stream)
+            try beginDeviceCapture(for: target)
             guard token == startToken else { return }
 
             captureState = .capturing
-            isStopping = false
-            scKitCallbackCount = 0
-            scKitAudioCount = 0
             logger.info("Live capture started for target: \(String(describing: target), privacy: .public)")
             pipeline.notifyCaptureStarted()
         } catch {
@@ -348,93 +331,235 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
         }
     }
 
-    private func stopCurrentStream(updatingState: Bool) async {
-        guard let stream else {
-            if updatingState {
-                captureState = .idle
-            }
-            return
+    private func scheduleCaptureStartTimeout(for target: AudioCaptureTarget, token: UUID) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + captureStartTimeout) { [weak self] in
+            self?.handleCaptureStartTimeout(for: target, token: token)
+        }
+    }
+
+    private func handleCaptureStartTimeout(for target: AudioCaptureTarget, token: UUID) {
+        guard token == startToken, captureState == .armed else { return }
+
+        startToken = UUID()
+        let message = stalledCaptureMessage(for: target)
+        captureState = .failed(message)
+        logger.error("Live capture timed out before stream started: \(message, privacy: .public)")
+        pipeline.notifyCaptureError(message)
+    }
+
+    private func stopCurrentCapture(updatingState: Bool) {
+        if let audioUnit {
+            AudioOutputUnitStop(audioUnit)
+            AudioUnitUninitialize(audioUnit)
+            AudioComponentInstanceDispose(audioUnit)
+            self.audioUnit = nil
+            self.activeDeviceID = nil
+            self.captureFormat = nil
+            logger.info("Stopped device-backed live capture")
         }
 
-        isStopping = true
-        self.stream = nil
+        if let screenCaptureSession {
+            screenCaptureSession.stop()
+            self.screenCaptureSession = nil
+            logger.info("Stopped ScreenCaptureKit system audio capture")
+        }
+
         if updatingState {
             captureState = .idle
         }
-
-        await withCheckedContinuation { continuation in
-            stream.stopCapture(completionHandler: { [weak self] error in
-                if let error {
-                    self?.logger.error("Failed stopping live capture: \(error.localizedDescription, privacy: .public)")
-                } else {
-                    self?.logger.info("Stopped live capture")
-                }
-                continuation.resume()
-            })
-        }
     }
 
-    private func loadShareableContent() async throws -> SCShareableContent {
-        try await SCShareableContent.current
-    }
-
-    private func startCapture(_ stream: SCStream) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            stream.startCapture(completionHandler: { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            })
-        }
-    }
-
-    private func makeContentFilter(for target: AudioCaptureTarget, shareableContent: SCShareableContent) throws -> SCContentFilter {
-        guard let display = shareableContent.displays.first else {
-            throw NSError(domain: "Spatial.LiveAudioCapture", code: -1002, userInfo: [
-                NSLocalizedDescriptionKey: "No displays are available to capture"
-            ])
-        }
-
+    private func beginDeviceCapture(for target: AudioCaptureTarget) throws {
         switch target {
-        case .systemMix:
-            let currentBundleIdentifier = Bundle.main.bundleIdentifier
-            let excludedApplications = shareableContent.applications.filter { application in
-                application.bundleIdentifier == currentBundleIdentifier
-            }
-            return SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
-
-        case .application(let bundleIdentifier, let displayName):
-            guard let application = shareableContent.applications.first(where: { $0.bundleIdentifier == bundleIdentifier }) else {
-                throw NSError(domain: "Spatial.LiveAudioCapture", code: -1003, userInfo: [
-                    NSLocalizedDescriptionKey: "Open \(displayName) before starting Spatial"
+        case .virtualDevice(let uid, let name):
+            guard let device = deviceService.deviceWithUID(uid) else {
+                throw NSError(domain: "Spatial.LiveAudioCapture", code: -2001, userInfo: [
+                    NSLocalizedDescriptionKey: "\(name) is not installed yet. Install the Spatial Speaker driver, restart Core Audio, then try again."
                 ])
             }
-            return SCContentFilter(display: display, including: [application], exceptingWindows: [])
 
+            try startLoopbackCapture(on: device.id, name: name)
         case .externalInput(let name):
-            throw NSError(domain: "Spatial.LiveAudioCapture", code: -1004, userInfo: [
-                NSLocalizedDescriptionKey: "\(name) is not wired into the live capture engine yet"
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2002, userInfo: [
+                NSLocalizedDescriptionKey: "\(name) is not wired into the live engine yet"
             ])
+        case .application(_, let displayName):
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2003, userInfo: [
+                NSLocalizedDescriptionKey: "\(displayName) must be routed through Spatial Speaker before capture can start"
+            ])
+        case .systemMix:
+            let readiness = deviceService.spatialVirtualDeviceReadiness()
+            if let device = readiness.device, readiness.issue == nil {
+                try startLoopbackCapture(on: device.id, name: AudioDeviceService.spatialVirtualDeviceName)
+            } else {
+                try startScreenCaptureSystemAudio()
+            }
         }
     }
 
-    private func makeStreamConfiguration() -> SCStreamConfiguration {
-        let configuration = SCStreamConfiguration()
-        configuration.width = 2
-        configuration.height = 2
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 2)
-        configuration.queueDepth = 3
-        configuration.showsCursor = false
-        configuration.capturesAudio = true
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
-        configuration.excludesCurrentProcessAudio = true
-        if #available(macOS 14.0, *) {
-            configuration.captureResolution = .nominal
+    private func startScreenCaptureSystemAudio() throws {
+        guard #available(macOS 13.0, *) else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2008, userInfo: [
+                NSLocalizedDescriptionKey: "System audio fallback requires macOS 13 or later."
+            ])
         }
-        return configuration
+
+        let session = SystemAudioScreenCaptureSession(pipeline: pipeline, logger: logger)
+        try session.start()
+        screenCaptureSession = session
+        logger.info("ScreenCaptureKit system audio capture armed")
+    }
+
+    private func startLoopbackCapture(on deviceID: AudioDeviceID, name: String) throws {
+        var description = AudioComponentDescription(
+            componentType: kAudioUnitType_Output,
+            componentSubType: kAudioUnitSubType_HALOutput,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+
+        guard let component = AudioComponentFindNext(nil, &description) else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2005, userInfo: [
+                NSLocalizedDescriptionKey: "Core Audio HAL output unit is unavailable"
+            ])
+        }
+
+        var audioUnit: AudioUnit?
+        guard AudioComponentInstanceNew(component, &audioUnit) == noErr, let audioUnit else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2006, userInfo: [
+                NSLocalizedDescriptionKey: "Could not create the Spatial Speaker capture unit"
+            ])
+        }
+
+        do {
+            var enableInput: UInt32 = 1
+            var disableOutput: UInt32 = 0
+            try checkStatus(
+                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &enableInput, UInt32(MemoryLayout<UInt32>.size)),
+                message: "Could not enable Spatial Speaker capture input"
+            )
+            try checkStatus(
+                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &disableOutput, UInt32(MemoryLayout<UInt32>.size)),
+                message: "Could not disable direct output on the capture unit"
+            )
+
+            var mutableDeviceID = deviceID
+            try checkStatus(
+                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &mutableDeviceID, UInt32(MemoryLayout<AudioDeviceID>.size)),
+                message: "Could not bind capture to Spatial Speaker"
+            )
+
+            let streamFormat = try makeCaptureStreamFormat(for: deviceID)
+            var asbd = streamFormat.streamDescription.pointee
+            try checkStatus(
+                AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &asbd, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)),
+                message: "Could not configure Spatial Speaker stream format"
+            )
+
+            var callback = AURenderCallbackStruct(
+                inputProc: liveCaptureInputCallback,
+                inputProcRefCon: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+            )
+            try checkStatus(
+                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
+                message: "Could not install the Spatial Speaker input callback"
+            )
+
+            try checkStatus(AudioUnitInitialize(audioUnit), message: "Could not initialize Spatial Speaker capture")
+            try checkStatus(AudioOutputUnitStart(audioUnit), message: "Could not start Spatial Speaker capture")
+
+            self.audioUnit = audioUnit
+            self.activeDeviceID = deviceID
+            self.captureFormat = streamFormat
+            logger.info("Loopback capture armed on device '\(name, privacy: .public)' id=\(deviceID)")
+        } catch {
+            AudioComponentInstanceDispose(audioUnit)
+            throw error
+        }
+    }
+
+    private func makeCaptureStreamFormat(for deviceID: AudioDeviceID) throws -> AVAudioFormat {
+        let sampleRate = try nominalSampleRate(for: deviceID)
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 2, interleaved: false) else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2007, userInfo: [
+                NSLocalizedDescriptionKey: "Could not create the Spatial Speaker capture format"
+            ])
+        }
+
+        return format
+    }
+
+    private func nominalSampleRate(for deviceID: AudioDeviceID) throws -> Double {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var sampleRate: Float64 = 48_000
+        var dataSize = UInt32(MemoryLayout<Float64>.size)
+        try checkStatus(
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &sampleRate),
+            message: "Could not query the Spatial Speaker sample rate"
+        )
+        return sampleRate
+    }
+
+    fileprivate func handleInput(frameCount: UInt32, ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>, timeStamp: UnsafePointer<AudioTimeStamp>) -> OSStatus {
+        guard let audioUnit, let captureFormat else {
+            return noErr
+        }
+
+        let channelCount = Int(captureFormat.channelCount)
+        let bytesPerChannel = Int(frameCount) * MemoryLayout<Float>.size
+        let audioBufferList = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
+        audioBufferList.pointee.mNumberBuffers = UInt32(channelCount)
+        let bufferListPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+
+        for index in 0..<channelCount {
+            bufferListPointer[index] = AudioBuffer(
+                mNumberChannels: 1,
+                mDataByteSize: UInt32(bytesPerChannel),
+                mData: UnsafeMutableRawPointer.allocate(byteCount: bytesPerChannel, alignment: MemoryLayout<Float>.alignment)
+            )
+        }
+
+        defer {
+            for buffer in bufferListPointer where buffer.mData != nil {
+                buffer.mData?.deallocate()
+            }
+            audioBufferList.deallocate()
+        }
+
+        let status = AudioUnitRender(audioUnit, ioActionFlags, timeStamp, 1, frameCount, audioBufferList)
+        guard status == noErr else {
+            logger.error("AudioUnitRender failed for Spatial Speaker capture. status=\(status)")
+            return status
+        }
+
+        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: frameCount) else {
+            return noErr
+        }
+
+        pcmBuffer.frameLength = frameCount
+        if let destination = pcmBuffer.floatChannelData {
+            for channel in 0..<channelCount {
+                if let source = bufferListPointer[channel].mData {
+                    memcpy(destination[channel], source, bytesPerChannel)
+                }
+            }
+        }
+
+        pipeline.deliver(pcmBuffer)
+        return noErr
+    }
+
+    private func checkStatus(_ status: OSStatus, message: String) throws {
+        guard status == noErr else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
+                NSLocalizedDescriptionKey: message
+            ])
+        }
     }
 
     private func userFacingCaptureError(_ error: Error, target: AudioCaptureTarget) -> String {
@@ -442,48 +567,223 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
         let description = nsError.localizedDescription
         logger.error("Raw capture error. domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(description, privacy: .public)")
 
-        if description.localizedCaseInsensitiveContains("declined")
-            || description.localizedCaseInsensitiveContains("not authorized")
-            || description.localizedCaseInsensitiveContains("permission") {
-            return "Allow Screen Recording for Spatial in System Settings"
-        }
+        let conflictSuffix = halDriverConflictSuffix()
 
         switch target {
         case .application(_, let displayName):
-            return "Could not capture audio from \(displayName): \(description)"
+            return "Could not connect \(displayName) to Spatial Speaker: \(description)\(conflictSuffix)"
         case .systemMix:
-            return "Could not capture system audio: \(description)"
+            if nsError.domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain", nsError.code == -3801 {
+                return "Could not capture system audio: Screen Recording permission is blocked. Allow Spatial in System Settings > Privacy & Security > Screen & System Audio Recording, then try again.\(conflictSuffix)"
+            }
+            return "Could not capture system audio: \(description)\(conflictSuffix)"
+        case .externalInput(let name):
+            return "\(name) is not wired into the live engine yet"
+        case .virtualDevice(let uid, let name):
+            if deviceService.deviceWithUID(uid) == nil {
+                return "\(name) is not installed. Copy the Spatial Speaker .driver into /Library/Audio/Plug-Ins/HAL, then restart coreaudiod or reboot.\(conflictSuffix)"
+            }
+            if let readinessIssue = deviceService.spatialVirtualDeviceReadiness().issue {
+                return readinessIssue
+            }
+            return "Could not capture audio from \(name): \(description)\(conflictSuffix)"
+        }
+    }
+
+    private func stalledCaptureMessage(for target: AudioCaptureTarget) -> String {
+        let conflictSuffix = halDriverConflictSuffix()
+
+        switch target {
+        case .virtualDevice(_, let name):
+            return "\(name) did not start streaming within \(Int(captureStartTimeout)) seconds. Restart Core Audio or reboot, then try again.\(conflictSuffix)"
+        case .application(_, let displayName):
+            return "\(displayName) did not start streaming through Spatial Speaker within \(Int(captureStartTimeout)) seconds.\(conflictSuffix)"
+        case .systemMix:
+            return "System audio capture did not start within \(Int(captureStartTimeout)) seconds.\(conflictSuffix)"
         case .externalInput(let name):
             return "\(name) is not wired into the live engine yet"
         }
     }
 
-    private var scKitCallbackCount = 0
-    private var scKitAudioCount = 0
+    private func halDriverConflictSuffix() -> String {
+        guard let conflictMessage = deviceService.halDriverConflictMessage() else {
+            return ""
+        }
+
+        return " \(conflictMessage)"
+    }
+}
+
+private let liveCaptureInputCallback: AURenderCallback = { inRefCon, ioActionFlags, inTimeStamp, _, inNumberFrames, _ in
+    let service = Unmanaged<LiveAudioCaptureService>.fromOpaque(inRefCon).takeUnretainedValue()
+    return service.handleInput(frameCount: inNumberFrames, ioActionFlags: ioActionFlags, timeStamp: inTimeStamp)
+}
+
+@available(macOS 13.0, *)
+private final class SystemAudioScreenCaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
+    private let pipeline: LiveAudioPipelineBridge
+    private let logger: Logger
+    private let sampleQueue = DispatchQueue(label: "com.spatial.app.system-audio-fallback", qos: .userInteractive)
+    private var stream: SCStream?
+
+    init(pipeline: LiveAudioPipelineBridge, logger: Logger) {
+        self.pipeline = pipeline
+        self.logger = logger
+    }
+
+    func start() throws {
+        let shareableContent = try loadShareableContent()
+        guard let display = shareableContent.displays.first else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2010, userInfo: [
+                NSLocalizedDescriptionKey: "No display was available for ScreenCaptureKit system audio capture"
+            ])
+        }
+
+        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        let configuration = SCStreamConfiguration()
+        configuration.width = max(2, size_t(display.width))
+        configuration.height = max(2, size_t(display.height))
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        configuration.queueDepth = 3
+        configuration.capturesAudio = true
+        configuration.excludesCurrentProcessAudio = false
+        configuration.sampleRate = 48_000
+        configuration.channelCount = 2
+
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+
+        self.stream = stream
+        try startCapture(stream: stream)
+    }
+
+    func stop() {
+        guard let stream else { return }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        stream.stopCapture { [weak self] _ in
+            if let self {
+                do {
+                    try stream.removeStreamOutput(self, type: .audio)
+                } catch {
+                    self.logger.error("Failed to remove ScreenCaptureKit audio output: \(error.localizedDescription, privacy: .public)")
+                }
+                do {
+                    try stream.removeStreamOutput(self, type: .screen)
+                } catch {
+                    self.logger.error("Failed to remove ScreenCaptureKit screen output: \(error.localizedDescription, privacy: .public)")
+                }
+                self.stream = nil
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+    }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        scKitCallbackCount += 1
+        guard type == .audio else { return }
+        guard CMSampleBufferIsValid(sampleBuffer), CMSampleBufferDataIsReady(sampleBuffer) else { return }
 
-        // Log every 60 callbacks so we know the delegate is firing at all
-        if scKitCallbackCount % 60 == 1 {
-            let isReady = CMSampleBufferDataIsReady(sampleBuffer)
-            logger.info("SCKit callback #\(self.scKitCallbackCount, privacy: .public) type=\(type == .audio ? "audio" : "screen", privacy: .public) dataReady=\(isReady, privacy: .public) audioDelivered=\(self.scKitAudioCount, privacy: .public)")
+        do {
+            if let buffer = try pcmBuffer(from: sampleBuffer) {
+                pipeline.deliver(buffer)
+            }
+        } catch {
+            logger.error("ScreenCaptureKit audio conversion failed: \(error.localizedDescription, privacy: .public)")
         }
-
-        guard type == .audio, CMSampleBufferDataIsReady(sampleBuffer) else {
-            return
-        }
-
-        scKitAudioCount += 1
-        pipeline.deliver(sampleBuffer)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        guard !isStopping else { return }
-        let message = userFacingCaptureError(error, target: target ?? .systemMix)
-        captureState = .failed(message)
-        logger.error("Capture stream stopped with error: \(message, privacy: .public)")
-        pipeline.notifyCaptureError(message)
+        logger.error("ScreenCaptureKit stream stopped with error: \(error.localizedDescription, privacy: .public)")
+        pipeline.notifyCaptureError("ScreenCaptureKit system audio capture stopped: \(error.localizedDescription)")
+    }
+
+    private func loadShareableContent() throws -> SCShareableContent {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Result<SCShareableContent, Error>?
+
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+            if let content {
+                result = .success(content)
+            } else {
+                result = .failure(error ?? NSError(domain: "Spatial.LiveAudioCapture", code: -2012, userInfo: [
+                    NSLocalizedDescriptionKey: "ScreenCaptureKit could not query shareable content"
+                ]))
+            }
+            semaphore.signal()
+        }
+
+        semaphore.wait()
+        return try result?.get() ?? {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2013, userInfo: [
+                NSLocalizedDescriptionKey: "ScreenCaptureKit did not return shareable content"
+            ])
+        }()
+    }
+
+    private func startCapture(stream: SCStream) throws {
+        let semaphore = DispatchSemaphore(value: 0)
+        var startError: Error?
+
+        stream.startCapture { error in
+            startError = error
+            semaphore.signal()
+        }
+
+        semaphore.wait()
+        if let startError {
+            throw startError
+        }
+    }
+
+    private func pcmBuffer(from sampleBuffer: CMSampleBuffer) throws -> AVAudioPCMBuffer? {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2014, userInfo: [
+                NSLocalizedDescriptionKey: "ScreenCaptureKit returned an unsupported audio format"
+            ])
+        }
+        let format = AVAudioFormat(cmAudioFormatDescription: formatDescription)
+
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        let audioBufferListSize = MemoryLayout<AudioBufferList>.size
+            + max(Int(format.channelCount) - 1, 0) * MemoryLayout<AudioBuffer>.size
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: audioBufferListSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+
+        let audioBufferList = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: audioBufferList,
+            bufferListSize: audioBufferListSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: UInt32(kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment),
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
+                NSLocalizedDescriptionKey: "ScreenCaptureKit audio buffer extraction failed"
+            ])
+        }
+
+        let retainedRawPointer = rawPointer
+        let retainedBlockBuffer = blockBuffer
+        return AVAudioPCMBuffer(
+            pcmFormat: format,
+            bufferListNoCopy: audioBufferList,
+            deallocator: { _ in
+                _ = retainedBlockBuffer
+                retainedRawPointer.deallocate()
+            }
+        ).map { buffer in
+            buffer.frameLength = frameCount
+            return buffer
+        }
     }
 }
 
@@ -504,7 +804,7 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     private let reverbNode = AVAudioUnitReverb()
     private let processingFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false)!
 
-    private(set) var processingGraphDescription: String = "ScreenCaptureKit -> AVAudioPlayerNode -> Motion Mixer -> Reverb -> Output"
+    private(set) var processingGraphDescription: String = "Spatial Speaker Loopback -> AVAudioPlayerNode -> Motion Mixer -> Reverb -> Output"
     private(set) var currentStatus: DSPEngineStatus = .idle {
         didSet {
             onStatusChange?(currentStatus)
@@ -520,14 +820,17 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     private var isBypassed = false
     private var phase: Double = 0
     private var inputLevel: Float = 0
-    private var scheduledBufferCount = 0
+    private var queuedFrameCount: AVAudioFramePosition = 0
     private var converter: AVAudioConverter?
     private var inputFormatSignature: InputFormatSignature?
     private var isCaptureRunning = false
     private var hasLoggedFirstLiveBuffer = false
     private var lastLoggedMeterBucket: Int?
+    private var lastLoggedQueueBucket: Int?
     private var pinnedOutputDeviceID: AudioDeviceID?
     private var engineConfigObserver: NSObjectProtocol?
+    private let maxQueuedFrames: AVAudioFramePosition = 1_920
+    private let queueResyncFrames: AVAudioFramePosition = 1_440
 
     init(pipeline: LiveAudioPipelineBridge) {
         self.pipeline = pipeline
@@ -587,12 +890,11 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
 
             self.motionTimer?.cancel()
             self.motionTimer = nil
-            self.scheduledBufferCount = 0
+            self.queuedFrameCount = 0
             self.converter = nil
             self.inputFormatSignature = nil
             self.pinnedOutputDeviceID = nil
-            self.playerNode.stop()
-            self.playerNode.reset()
+            self.resetScheduledAudioQueue()
             self.engine.stop()
             self.currentSource = nil
             self.currentStatus = .idle
@@ -630,7 +932,7 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
 
     func pinOutputDevice(_ deviceID: AudioDeviceID) {
         // Synchronous so the caller can switch the system default immediately after,
-        // knowing the engine is already pinned to real hardware before BlackHole takes over.
+        // knowing the engine is already pinned to real hardware before Spatial Speaker takes over.
         processingQueue.sync { [weak self] in
             guard let self else { return }
             self.pinnedOutputDeviceID = deviceID
@@ -686,9 +988,9 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     }
 
     private func installPipelineHandlers() {
-        pipeline.setSampleBufferHandler { [weak self] sampleBuffer in
+        pipeline.setPCMBufferHandler { [weak self] buffer in
             self?.processingQueue.async {
-                self?.consume(sampleBuffer: sampleBuffer)
+                self?.consume(buffer: buffer)
             }
         }
 
@@ -825,18 +1127,19 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     private func resetCaptureDrivenState() {
         isCaptureRunning = false
         inputLevel = 0
-        scheduledBufferCount = 0
+        queuedFrameCount = 0
         hasLoggedFirstLiveBuffer = false
         lastLoggedMeterBucket = nil
+        lastLoggedQueueBucket = nil
         consumeCallCount = 0
     }
 
     private var consumeCallCount = 0
 
-    private func consume(sampleBuffer: CMSampleBuffer) {
+    private func consume(buffer: AVAudioPCMBuffer) {
         consumeCallCount += 1
         if consumeCallCount == 1 {
-            logger.info("First sample buffer reached DSP engine consume(). source=\(self.currentSource?.rawValue ?? "nil", privacy: .public) isCaptureRunning=\(self.isCaptureRunning, privacy: .public)")
+            logger.info("First loopback buffer reached DSP engine consume(). source=\(self.currentSource?.rawValue ?? "nil", privacy: .public) isCaptureRunning=\(self.isCaptureRunning, privacy: .public)")
         }
         guard currentSource != nil, isCaptureRunning else {
             if consumeCallCount <= 3 {
@@ -848,12 +1151,12 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         do {
             try ensureEngineRunning()
 
-            if scheduledBufferCount > 24 {
-                logger.debug("Dropping captured buffer to keep latency bounded")
+            if queuedFrameCount >= maxQueuedFrames {
+                logger.debug("Dropping captured buffer to keep latency bounded. queuedFrames=\(self.queuedFrameCount, privacy: .public)")
                 return
             }
 
-            guard let playbackBuffer = try makePlaybackBuffer(from: sampleBuffer) else {
+            guard let playbackBuffer = try makePlaybackBuffer(from: buffer) else {
                 return
             }
 
@@ -863,12 +1166,19 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             }
 
             updateMeter(from: playbackBuffer)
-            scheduledBufferCount += 1
+            if queuedFrameCount >= queueResyncFrames {
+                logger.info("Resetting scheduled audio queue to reduce latency. queuedFrames=\(self.queuedFrameCount, privacy: .public)")
+                resetScheduledAudioQueue()
+            }
+
+            let scheduledFrames = AVAudioFramePosition(playbackBuffer.frameLength)
+            queuedFrameCount += scheduledFrames
+            logQueuedAudioIfNeeded()
 
             playerNode.scheduleBuffer(playbackBuffer, completionCallbackType: .dataConsumed) { [weak self] _ in
                 self?.processingQueue.async {
                     guard let self else { return }
-                    self.scheduledBufferCount = max(0, self.scheduledBufferCount - 1)
+                    self.queuedFrameCount = max(0, self.queuedFrameCount - scheduledFrames)
                 }
             }
 
@@ -881,10 +1191,21 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         }
     }
 
-    private func makePlaybackBuffer(from sampleBuffer: CMSampleBuffer) throws -> AVAudioPCMBuffer? {
-        guard let sourceFormat = makeFormat(from: sampleBuffer),
-              let sourceBuffer = try makePCMBuffer(from: sampleBuffer, format: sourceFormat) else {
-            return nil
+    private func makePlaybackBuffer(from sourceBuffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer? {
+        let sourceFormat = sourceBuffer.format
+
+        if sourceFormat.sampleRate == processingFormat.sampleRate,
+           sourceFormat.channelCount == processingFormat.channelCount,
+           sourceFormat.commonFormat == processingFormat.commonFormat,
+           sourceFormat.isInterleaved == processingFormat.isInterleaved {
+            converter = nil
+            inputFormatSignature = InputFormatSignature(
+                sampleRate: sourceFormat.sampleRate,
+                channelCount: sourceFormat.channelCount,
+                commonFormat: sourceFormat.commonFormat,
+                interleaved: sourceFormat.isInterleaved
+            )
+            return sourceBuffer
         }
 
         let signature = InputFormatSignature(
@@ -929,37 +1250,19 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         return outputBuffer.frameLength > 0 ? outputBuffer : nil
     }
 
-    private func makeFormat(from sampleBuffer: CMSampleBuffer) -> AVAudioFormat? {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
-            return nil
-        }
-
-        var description = asbd.pointee
-        return AVAudioFormat(streamDescription: &description)
+    private func logQueuedAudioIfNeeded() {
+        let queuedMilliseconds = Int((Double(queuedFrameCount) / processingFormat.sampleRate) * 1_000.0)
+        let queueBucket = queuedMilliseconds / 10
+        guard queueBucket != lastLoggedQueueBucket else { return }
+        lastLoggedQueueBucket = queueBucket
+        logger.debug("Queued processed audio=\(queuedMilliseconds, privacy: .public)ms frames=\(self.queuedFrameCount, privacy: .public)")
     }
 
-    private func makePCMBuffer(from sampleBuffer: CMSampleBuffer, format: AVAudioFormat) throws -> AVAudioPCMBuffer? {
-        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
-        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-            return nil
-        }
-
-        pcmBuffer.frameLength = frameCount
-        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: pcmBuffer.mutableAudioBufferList
-        )
-
-        guard status == noErr else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
-                NSLocalizedDescriptionKey: "Unable to copy audio data from capture buffer"
-            ])
-        }
-
-        return pcmBuffer
+    private func resetScheduledAudioQueue() {
+        queuedFrameCount = 0
+        lastLoggedQueueBucket = nil
+        playerNode.stop()
+        playerNode.reset()
     }
 
     private func updateMeter(from buffer: AVAudioPCMBuffer) {

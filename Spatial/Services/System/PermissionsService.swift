@@ -3,6 +3,7 @@ import Foundation
 
 protocol PermissionsService {
     var isScreenRecordingAuthorized: Bool { get }
-    func requestScreenRecordingAuthorization()
+    @discardableResult
+    func requestScreenRecordingAuthorization() -> Bool
     func openScreenRecordingSettings()
 }

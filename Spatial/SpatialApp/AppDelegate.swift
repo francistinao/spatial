@@ -9,6 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        environment.echoPreventionService.deactivate()
+        environment.virtualAudioRoutingService.deactivate()
     }
 }

@@ -62,10 +62,10 @@ private struct ExpandedWidgetView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            Text("SPATIAL")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .tracking(0.5)
-                .foregroundStyle(SpatialColor.textPrimary.opacity(0.92))
+            Image("logo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 90)
 
             Spacer()
 
@@ -80,7 +80,7 @@ private struct ExpandedWidgetView: View {
                         .frame(width: 34, height: 34)
 
                     Image(systemName: model.state.isEnabled ? "waveform.path.ecg" : "power")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SpatialTypography.header(13))
                         .foregroundStyle(model.state.isEnabled ? SpatialColor.accentLight : SpatialColor.textTertiary)
                 }
             }
@@ -98,12 +98,12 @@ private struct ExpandedWidgetView: View {
 
             VStack(spacing: 2) {
                 Text("8D POSITION")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SpatialTypography.header(11))
                     .tracking(1.0)
                     .foregroundStyle(SpatialColor.textPrimary.opacity(0.82))
 
                 Text(positionVisualizerSubtitle)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(SpatialTypography.text(10))
                     .foregroundStyle(SpatialColor.textSecondary.opacity(0.9))
             }
         }
@@ -124,19 +124,19 @@ private struct ExpandedWidgetView: View {
                     )
 
                 Image(systemName: model.displayArtworkSystemName)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(SpatialTypography.text(20))
                     .foregroundStyle(SpatialColor.accentLight.opacity(0.85))
             }
             .frame(width: 54, height: 54)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.collapsedTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SpatialTypography.header(15))
                     .foregroundStyle(SpatialColor.textPrimary)
                     .lineLimit(1)
 
                 Text(model.displayArtistName)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(SpatialTypography.text(12))
                     .foregroundStyle(SpatialColor.textSecondary)
                     .lineLimit(1)
             }
@@ -160,59 +160,66 @@ private struct ExpandedWidgetView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("8D CONTROLS")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(0.9)
-                .foregroundStyle(SpatialColor.textPrimary.opacity(0.82))
+                .font(SpatialTypography.header(11))
+                .tracking(1.1)
+                .foregroundStyle(SpatialColor.textPrimary.opacity(0.84))
 
-            HStack(spacing: 14) {
-                CircularDialControl(title: "ROTATE", value: binding(for: \.rotation))
-                CircularDialControl(title: "DEPTH", value: binding(for: \.depth))
-                CircularDialControl(title: "AMBIENCE", value: binding(for: \.reverb))
-                CircularDialControl(title: "WIDTH", value: binding(for: \.width))
+            HStack(spacing: 18) {
+                MixerRotaryKnob(title: "ROTATION", value: binding(for: \.rotation), displayText: "\(Int(model.settings.rotation * 100))%")
+                MixerRotaryKnob(title: "DEPTH", value: binding(for: \.depth), displayText: "\(Int(model.settings.depth * 100))%")
+                MixerRotaryKnob(title: "REVERB", value: binding(for: \.reverb), displayText: "\(Int(model.settings.reverb * 100))%")
+                MixerRotaryKnob(title: "WIDTH", value: binding(for: \.width), displayText: "\(Int(model.settings.width * 100))%")
             }
 
-            Text("Rotate sets side-to-side orbit span. Depth controls binaural intensity. Ambience adds space. Width expands stereo spread.")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(SpatialColor.textSecondary.opacity(0.92))
+            Text("Rotation sets orbit span. Depth shapes binaural intensity. Reverb adds space. Width expands the stereo image.")
+                .font(SpatialTypography.text(10))
+                .foregroundStyle(SpatialColor.textSecondary.opacity(0.9))
 
-            if !model.areLiveControlsEnabled {
+            if !model.areLiveControlsEnabled,
+               model.liveControlsStatusText != positionVisualizerSubtitle {
                 Text(model.liveControlsStatusText)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(SpatialTypography.header(10))
                     .foregroundStyle(SpatialColor.accentLight.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 18)
-        .padding(.bottom, 14)
+        .padding(.bottom, 18)
         .disabled(!model.areLiveControlsEnabled)
         .opacity(model.areLiveControlsEnabled ? 1 : 0.6)
     }
 
     private var sliders: some View {
-        VStack(spacing: 14) {
-            WidgetLinearSlider(
-                title: "ORBIT SPEED",
-                valueLabel: "\(Int(model.settings.speed))",
-                value: Binding(
-                    get: { model.settings.speed / 10.0 },
-                    set: { model.updateSpeed(max(1, min(10, $0 * 10.0))) }
-                )
-            )
+        VStack(spacing: 18) {
+            HStack(alignment: .top, spacing: 42) {
+                Spacer(minLength: 0)
 
-            WidgetLinearSlider(
-                title: "VERTICAL ARC",
-                valueLabel: "\(Int(model.settings.elevation * 100))%",
-                value: binding(for: \.elevation)
-            )
+                MixerVerticalFader(
+                    title: "SPEED",
+                    value: Binding(
+                        get: { max(0, min(1, (model.settings.speed - 1.0) / 9.0)) },
+                        set: { model.updateSpeed(max(1, min(10, ($0 * 9.0) + 1.0)).rounded()) }
+                    ),
+                    displayText: "\(Int(model.settings.speed))"
+                )
+
+                MixerVerticalFader(
+                    title: "ELEVATION",
+                    value: binding(for: \.elevation),
+                    displayText: "\(Int(model.settings.elevation * 100))%"
+                )
+
+                Spacer(minLength: 0)
+            }
 
             Text("Orbit Speed changes how fast sound circles around you. Vertical Arc lifts the path above and below ear level.")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(SpatialColor.textSecondary.opacity(0.92))
+                .font(SpatialTypography.text(10))
+                .foregroundStyle(SpatialColor.textSecondary.opacity(0.9))
         }
         .padding(.horizontal, 18)
-        .padding(.bottom, 14)
+        .padding(.bottom, 20)
         .disabled(!model.areLiveControlsEnabled)
         .opacity(model.areLiveControlsEnabled ? 1 : 0.6)
     }
@@ -220,7 +227,7 @@ private struct ExpandedWidgetView: View {
     private var presets: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("PRESETS")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(SpatialTypography.header(11))
                 .tracking(0.9)
                 .foregroundStyle(SpatialColor.textPrimary.opacity(0.82))
 
@@ -228,19 +235,32 @@ private struct ExpandedWidgetView: View {
                 ForEach(model.presets) { preset in
                     Button(action: { model.selectPreset(preset.kind) }) {
                         Text(preset.kind.displayName)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .tracking(0.4)
-                            .foregroundStyle(SpatialColor.textPrimary.opacity(model.selectedPreset == preset.kind ? 1 : 0.86))
+                            .font(SpatialTypography.header(13))
+                            .tracking(0.8)
+                            .foregroundStyle(SpatialColor.textPrimary.opacity(model.selectedPreset == preset.kind ? 1 : 0.88))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 11)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(model.selectedPreset == preset.kind ? SpatialColor.accent.opacity(0.28) : Color.white.opacity(0.06))
+                                    .fill(
+                                        model.selectedPreset == preset.kind
+                                            ? LinearGradient(
+                                                colors: [SpatialColor.accent.opacity(0.38), SpatialColor.accent.opacity(0.20)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                            : LinearGradient(
+                                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.04)],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                    )
                             )
                             .overlay(
                                 Capsule(style: .continuous)
-                                    .stroke(model.selectedPreset == preset.kind ? SpatialColor.accent : Color.white.opacity(0.06), lineWidth: 1)
+                                    .stroke(model.selectedPreset == preset.kind ? SpatialColor.accent.opacity(0.95) : Color.white.opacity(0.07), lineWidth: 1)
                             )
+                            .shadow(color: model.selectedPreset == preset.kind ? SpatialColor.accent.opacity(0.24) : .clear, radius: 14, y: 5)
                     }
                     .buttonStyle(.plain)
                 }
@@ -256,7 +276,7 @@ private struct ExpandedWidgetView: View {
         HStack {
             Button(action: openSettings) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SpatialTypography.text(14))
                     .foregroundStyle(SpatialColor.textPrimary.opacity(0.9))
                     .frame(width: 24)
             }
@@ -264,7 +284,7 @@ private struct ExpandedWidgetView: View {
 
             Button(action: model.collapseWidgetIfPossible) {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SpatialTypography.text(14))
                     .foregroundStyle(SpatialColor.textSecondary)
                     .frame(width: 24)
             }
@@ -274,18 +294,24 @@ private struct ExpandedWidgetView: View {
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(model.engineStatusText.uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(SpatialTypography.header(10))
                     .tracking(0.8)
                     .foregroundStyle(SpatialColor.accentLight)
 
                 Text(model.spatialTuningSummary)
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .font(SpatialTypography.text(9))
                     .foregroundStyle(SpatialColor.textSecondary)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.18))
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.18), Color.black.opacity(0.24)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.white.opacity(0.06))
@@ -353,12 +379,12 @@ private struct CollapsedWidgetView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.collapsedTitle)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SpatialTypography.text(14))
                     .foregroundStyle(SpatialColor.textPrimary)
                     .lineLimit(1)
 
                 Text(model.collapsedSubtitle)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(SpatialTypography.header(10))
                     .tracking(0.9)
                     .foregroundStyle(SpatialColor.textSecondary.opacity(0.94))
                     .lineLimit(1)
@@ -438,7 +464,7 @@ private struct SourceBadge: View {
 
     var body: some View {
         Text(source?.title.replacingOccurrences(of: "\n", with: " ") ?? "None")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(SpatialTypography.header(10))
             .tracking(0.2)
             .foregroundStyle(source?.statusTint ?? SpatialColor.textTertiary)
             .padding(.horizontal, 9)
@@ -454,55 +480,215 @@ private struct SourceBadge: View {
     }
 }
 
-private struct CircularDialControl: View {
+private struct MixerRotaryKnob: View {
     let title: String
     @Binding var value: Double
+    let displayText: String
+    @State private var dragStartValue: Double?
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(spacing: 6) {
-            GeometryReader { geometry in
-                let size = min(geometry.size.width, geometry.size.height)
-
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 7)
-
-                    Circle()
-                        .trim(from: 0, to: max(0.03, value))
-                        .stroke(
-                            AngularGradient(
-                                colors: [SpatialColor.accentLight, SpatialColor.accent],
-                                center: .center
-                            ),
-                            style: StrokeStyle(lineWidth: 7, lineCap: .round)
+        VStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.08), Color.white.opacity(0.03)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                        .rotationEffect(.degrees(-90))
+                    )
+                    .frame(width: 60, height: 60)
 
-                    Text("\(Int(value * 100))%")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(SpatialColor.textPrimary)
-                }
-                .frame(width: size, height: size)
-                .contentShape(Circle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { gesture in
-                            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                            let vector = CGVector(dx: gesture.location.x - center.x, dy: gesture.location.y - center.y)
-                            let angle = atan2(vector.dy, vector.dx) + .pi / 2
-                            let wrapped = angle < 0 ? angle + (.pi * 2) : angle
-                            value = min(1, max(0, wrapped / (.pi * 2)))
-                        }
-                )
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(hex: 0x2A2A2F), Color(hex: 0x1A1A1F)],
+                            center: .topLeading,
+                            startRadius: 3,
+                            endRadius: 30
+                        )
+                    )
+                    .frame(width: 54, height: 54)
+
+                Circle()
+                    .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                    .frame(width: 54, height: 54)
+
+                Circle()
+                    .stroke(Color.black.opacity(0.6), lineWidth: 4)
+                    .frame(width: 44, height: 44)
+
+                Circle()
+                    .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                    .frame(width: 40, height: 40)
+
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(SpatialColor.accentLight)
+                    .frame(width: 5, height: 16)
+                    .offset(y: -13)
+                    .rotationEffect(indicatorAngle)
+                    .shadow(color: SpatialColor.accent.opacity(0.20), radius: 4, y: 1)
             }
-            .frame(width: 58, height: 58)
+            .scaleEffect(isHovering ? 1.02 : 1)
+            .contentShape(Circle())
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isHovering = hovering
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let start = dragStartValue ?? value
+                        if dragStartValue == nil {
+                            dragStartValue = value
+                        }
+                        let delta = Double(-gesture.translation.height / 130)
+                        value = min(1, max(0, start + delta))
+                    }
+                    .onEnded { _ in
+                        dragStartValue = nil
+                    }
+            )
+
+            Text(displayText)
+                .font(SpatialTypography.header(19))
+                .foregroundStyle(SpatialColor.accentLight.opacity(0.95))
 
             Text(title)
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(SpatialColor.textSecondary)
+                .font(SpatialTypography.header(9))
+                .tracking(0.9)
+                .foregroundStyle(SpatialColor.textPrimary.opacity(0.9))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var indicatorAngle: Angle {
+        let minAngle = -140.0
+        let maxAngle = 140.0
+        return .degrees(minAngle + ((maxAngle - minAngle) * value))
+    }
+}
+
+private struct MixerVerticalFader: View {
+    let title: String
+    @Binding var value: Double
+    let displayText: String
+    @State private var dragStartValue: Double?
+    @State private var isHovering = false
+
+    private let trackHeight: CGFloat = 148
+    private let trackWidth: CGFloat = 38
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.52), Color.black.opacity(0.68)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: trackWidth, height: trackHeight)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                    )
+
+                HStack(spacing: 8) {
+                    faderRail
+                    faderRail
+                }
+                .frame(height: trackHeight - 18)
+
+                VStack {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                            .frame(width: 8, height: 1.2)
+                        Spacer()
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+            .overlay(alignment: .top) {
+                faderCap
+                    .offset(y: capOffset)
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(isHovering ? 1.02 : 1)
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isHovering = hovering
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let start = dragStartValue ?? value
+                        if dragStartValue == nil {
+                            dragStartValue = value
+                        }
+                        let delta = Double(-gesture.translation.height / (trackHeight - 28))
+                        value = min(1, max(0, start + delta))
+                    }
+                    .onEnded { _ in
+                        dragStartValue = nil
+                    }
+            )
+
+            Text(displayText)
+                .font(SpatialTypography.header(20))
+                .foregroundStyle(SpatialColor.accentLight.opacity(0.96))
+
+            Text(title)
+                .font(SpatialTypography.header(10))
+                .tracking(0.9)
+                .foregroundStyle(SpatialColor.textPrimary.opacity(0.9))
+        }
+    }
+
+    private var faderRail: some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [Color(hex: 0x080808), Color(hex: 0x161616), Color(hex: 0x080808)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: 7)
+    }
+
+    private var faderCap: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0x45424D), Color(hex: 0x2E2B34)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 50, height: 28)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(SpatialColor.accentLight.opacity(0.88))
+                .frame(width: 46, height: 2)
+        }
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+    }
+
+    private var capOffset: CGFloat {
+        let usableHeight = trackHeight - 34
+        return ((1 - value) * usableHeight) - (usableHeight / 2)
     }
 }
 
@@ -515,14 +701,14 @@ private struct WidgetLinearSlider: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SpatialTypography.header(11))
                     .tracking(0.8)
                     .foregroundStyle(SpatialColor.textPrimary.opacity(0.84))
 
                 Spacer()
 
                 Text(valueLabel)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SpatialTypography.header(14))
                     .foregroundStyle(SpatialColor.accentLight)
             }
 

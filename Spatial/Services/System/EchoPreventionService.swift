@@ -3,59 +3,79 @@ import CoreAudio
 import Foundation
 import OSLog
 
-private let savedDeviceUIDKey = "com.spatial.app.echoPreventionSavedDeviceUID"
+private let savedDeviceUIDKey = "com.spatial.app.virtualRoutingSavedDeviceUID"
 
-protocol EchoPreventionService: AnyObject {
+protocol VirtualAudioRoutingService: AnyObject {
     var isActive: Bool { get }
-    var blackHoleAvailable: Bool { get }
-    func activate(pinEngineOutput: (AudioDeviceID) -> Void) -> Bool
+    var virtualDeviceAvailable: Bool { get }
+    var virtualDeviceIssue: String? { get }
+    func activate(preferredMonitorDeviceUID: String?, pinEngineOutput: (AudioDeviceID) -> Void) -> Bool
     func deactivate()
     func restoreOnLaunchIfNeeded()
 }
 
-final class BlackHoleEchoPreventionService: EchoPreventionService {
-    private let logger = Logger(subsystem: "com.spatial.app", category: "EchoPrevention")
+final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
+    private let logger = Logger(subsystem: "com.spatial.app", category: "VirtualAudioRouting")
     private let deviceService: AudioDeviceService
     private(set) var isActive = false
 
-    var blackHoleAvailable: Bool {
-        deviceService.blackHoleDevice() != nil
+    var virtualDeviceAvailable: Bool {
+        deviceService.spatialVirtualDeviceReadiness().isUsable
+    }
+
+    var virtualDeviceIssue: String? {
+        deviceService.spatialVirtualDeviceReadiness().issue
     }
 
     init(deviceService: AudioDeviceService) {
         self.deviceService = deviceService
     }
 
-    func activate(pinEngineOutput: (AudioDeviceID) -> Void) -> Bool {
-        guard let blackHole = deviceService.blackHoleDevice() else {
-            logger.warning("BlackHole not installed — echo prevention unavailable")
+    func activate(preferredMonitorDeviceUID: String?, pinEngineOutput: (AudioDeviceID) -> Void) -> Bool {
+        let readiness = deviceService.spatialVirtualDeviceReadiness()
+
+        guard let spatialSpeaker = readiness.device, readiness.issue == nil else {
+            if let issue = readiness.issue {
+                logger.warning("Spatial Speaker unavailable for routing: \(issue, privacy: .public)")
+            } else {
+                logger.warning("Spatial Speaker not installed — virtual routing unavailable")
+            }
             return false
         }
 
         let current = deviceService.systemOutputDevice()
-        let currentIsBlackHole = current?.isBlackHole ?? false
+        let currentIsSpatial = current?.isSpatialVirtualDevice ?? false
+        let preferredMonitor = resolveMonitorDevice(
+            preferredMonitorDeviceUID: preferredMonitorDeviceUID,
+            currentOutput: current
+        )
 
-        if !currentIsBlackHole, let current {
+        if let preferredMonitor {
+            UserDefaults.standard.set(preferredMonitor.uid, forKey: savedDeviceUIDKey)
+            pinEngineOutput(preferredMonitor.id)
+            logger.info("Prepared monitor output device: \(preferredMonitor.name, privacy: .public) uid=\(preferredMonitor.uid, privacy: .public)")
+        } else if !currentIsSpatial, let current {
             UserDefaults.standard.set(current.uid, forKey: savedDeviceUIDKey)
             pinEngineOutput(current.id)
+            logger.info("Falling back to current output device for monitor path: \(current.name, privacy: .public)")
         }
 
-        guard !currentIsBlackHole else {
-            logger.info("System output is already BlackHole — skipping switch")
+        guard !currentIsSpatial else {
+            logger.info("System output is already Spatial Speaker — skipping switch")
             isActive = true
             return true
         }
 
         do {
-            try deviceService.setSystemOutputDevice(blackHole)
+            try deviceService.setSystemOutputDevice(spatialSpeaker)
         } catch {
-            logger.error("Could not switch system output to BlackHole: \(error.localizedDescription, privacy: .public)")
+            logger.error("Could not switch system output to Spatial Speaker: \(error.localizedDescription, privacy: .public)")
             UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
             return false
         }
 
         isActive = true
-        logger.info("Echo prevention active. Saved output '\(current?.name ?? "unknown", privacy: .public)' → BlackHole. Engine pinned to real hardware.")
+        logger.info("Virtual routing active. System output routed to Spatial Speaker while Spatial monitors on '\(preferredMonitor?.name ?? current?.name ?? "unknown", privacy: .public)'.")
         return true
     }
 
@@ -87,13 +107,31 @@ final class BlackHoleEchoPreventionService: EchoPreventionService {
             logger.error("Failed to restore system output: \(error.localizedDescription, privacy: .public)")
         }
     }
+
+    private func resolveMonitorDevice(
+        preferredMonitorDeviceUID: String?,
+        currentOutput: AudioOutputDevice?
+    ) -> AudioOutputDevice? {
+        if let preferredMonitorDeviceUID,
+           let preferred = deviceService.deviceWithUID(preferredMonitorDeviceUID),
+           !preferred.isSpatialVirtualDevice {
+            return preferred
+        }
+
+        if let currentOutput, !currentOutput.isSpatialVirtualDevice {
+            return currentOutput
+        }
+
+        return deviceService.allOutputDevices().first { !$0.isSpatialVirtualDevice }
+    }
 }
 
-final class StubEchoPreventionService: EchoPreventionService {
+final class StubVirtualAudioRoutingService: VirtualAudioRoutingService {
     private(set) var isActive = false
-    let blackHoleAvailable = false
+    let virtualDeviceAvailable = false
+    let virtualDeviceIssue: String? = nil
 
-    func activate(pinEngineOutput: (AudioDeviceID) -> Void) -> Bool { false }
+    func activate(preferredMonitorDeviceUID: String?, pinEngineOutput: (AudioDeviceID) -> Void) -> Bool { false }
     func deactivate() {}
     func restoreOnLaunchIfNeeded() {}
 }

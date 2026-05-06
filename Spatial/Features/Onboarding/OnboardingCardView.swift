@@ -3,6 +3,9 @@ import SwiftUI
 struct OnboardingCardView: View {
     let state: SpatialAppState
     let primaryButtonTitle: String
+    var primaryButtonDisabled: Bool = false
+    var detailText: String
+    var statusText: String?
     var onPrimaryAction: () -> Void = {}
     var onLearnMore: () -> Void = {}
 
@@ -32,7 +35,7 @@ struct OnboardingCardView: View {
                     .frame(width: 52, height: 52)
 
                 Image(systemName: "headphones")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(SpatialTypography.header(24))
                     .foregroundStyle(SpatialColor.accentLight)
             }
             .padding(.top, -60)
@@ -40,13 +43,13 @@ struct OnboardingCardView: View {
 
             VStack(spacing: 18) {
                 VStack(spacing: 14) {
-                    Text("Spatial needs one permission")
-                        .font(.system(size: 22, weight: .medium, design: .default))
+                    Text("Spatial needs one audio driver")
+                        .font(SpatialTypography.header(22))
                         .foregroundStyle(SpatialColor.textPrimary)
                         .multilineTextAlignment(.center)
 
-                    Text("To process your system audio in real-time, Spatial needs Screen Recording permission. For echo-free playback, route audio through a virtual device like BlackHole or Loopback. Your audio never leaves your device.")
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                    Text(detailText)
+                        .font(SpatialTypography.text(14))
                         .foregroundStyle(SpatialColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
@@ -71,7 +74,7 @@ struct OnboardingCardView: View {
 
                 Button(action: onPrimaryAction) {
                     Text(primaryButtonTitle)
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .font(SpatialTypography.text(15))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
@@ -88,13 +91,24 @@ struct OnboardingCardView: View {
                         .shadow(color: SpatialColor.accent.opacity(0.40), radius: 16, y: 8)
                 }
                 .buttonStyle(.plain)
+                .disabled(primaryButtonDisabled)
+                .opacity(primaryButtonDisabled ? 0.7 : 1)
 
                 Button(action: onLearnMore) {
                     Text("Learn how this works")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SpatialTypography.text(14))
                         .foregroundStyle(SpatialColor.accent)
                 }
                 .buttonStyle(.plain)
+
+                if let statusText, !statusText.isEmpty {
+                    Text(statusText)
+                        .font(SpatialTypography.text(12))
+                        .foregroundStyle(state.screenRecordingAuthorized ? SpatialColor.activeGreen : SpatialColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.horizontal, 28)
@@ -120,11 +134,11 @@ private struct OnboardingBenefitPill: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .font(SpatialTypography.header(11))
                 .foregroundStyle(SpatialColor.activeGreen)
 
             Text(title)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(SpatialTypography.text(12))
                 .foregroundStyle(SpatialColor.textPrimary)
         }
         .padding(.horizontal, 14)
