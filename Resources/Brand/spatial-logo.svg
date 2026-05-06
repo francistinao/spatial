@@ -1,0 +1,10 @@
+<svg width="640" height="240" viewBox="0 0 640 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="640" height="240" rx="36" fill="#0D0D0D"/>
+  <g transform="translate(48 38)">
+    <path d="M32 82C32 46.5497 56.7441 22 87 22C119.963 22 136.444 47.1852 146.926 82C157.407 116.815 173.889 142 206.852 142C237.108 142 261.852 117.45 261.852 82C261.852 46.5497 237.108 22 206.852 22C173.889 22 157.407 47.1852 146.926 82C136.444 116.815 119.963 142 87 142C56.7441 142 32 117.45 32 82Z" stroke="#7F5AF0" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="147" cy="82" rx="131" ry="54" transform="rotate(-20 147 82)" stroke="#A78BFA" stroke-width="7" opacity="0.85"/>
+    <circle cx="233" cy="40" r="11" fill="#A78BFA"/>
+  </g>
+  <text x="348" y="102" fill="#FFFFFE" font-family="SF Pro Display, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="0.08em">SPATIAL</text>
+  <text x="350" y="138" fill="#7F5AF0" font-family="SF Pro Text, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" letter-spacing="0.18em">8D AUDIO ENGINE</text>
+</svg>

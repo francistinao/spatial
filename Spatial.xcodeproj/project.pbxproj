@@ -1,0 +1,545 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000010000000000000000 /* SpatialApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000000 /* SpatialApp.swift */; };
+		A00000020000000000000000 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000120000000000000000 /* AppDelegate.swift */; };
+		A00000030000000000000000 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000130000000000000000 /* StatusBarController.swift */; };
+		A000003A1000000000000000 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000003A2000000000000000 /* OnboardingWindowController.swift */; };
+		A000003A3000000000000000 /* SourceSelectionWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000003A4000000000000000 /* SourceSelectionWindowController.swift */; };
+		A000003A5000000000000000 /* AudioSourceOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000003A6000000000000000 /* AudioSourceOption.swift */; };
+		A000003A7000000000000000 /* SourceSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000003A8000000000000000 /* SourceSelectionView.swift */; };
+		A00000040000000000000000 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000140000000000000000 /* AppEnvironment.swift */; };
+		A00000050000000000000000 /* SpatialAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000150000000000000000 /* SpatialAppModel.swift */; };
+		A00000060000000000000000 /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000160000000000000000 /* MockData.swift */; };
+		A00000070000000000000000 /* SpatialAppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000170000000000000000 /* SpatialAppState.swift */; };
+		A00000080000000000000000 /* SpatialSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000180000000000000000 /* SpatialSettings.swift */; };
+		A00000090000000000000000 /* SpatialPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000190000000000000000 /* SpatialPreset.swift */; };
+		A000000A0000000000000000 /* NowPlayingInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001A0000000000000000 /* NowPlayingInfo.swift */; };
+		A000000B0000000000000000 /* SpatialColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001B0000000000000000 /* SpatialColor.swift */; };
+		A000000C0000000000000000 /* SpatialTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001C0000000000000000 /* SpatialTypography.swift */; };
+		A000000D0000000000000000 /* SpatialMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001D0000000000000000 /* SpatialMetrics.swift */; };
+		A000000E0000000000000000 /* SectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001E0000000000000000 /* SectionCard.swift */; };
+		A000000F0000000000000000 /* PillBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001F0000000000000000 /* PillBadge.swift */; };
+		A00000100000000000000000 /* KnobPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000200000000000000000 /* KnobPlaceholderView.swift */; };
+		A00000210000000000000000 /* VisualizerBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000210000000000000001 /* VisualizerBarsView.swift */; };
+		A00000220000000000000000 /* WidgetRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000220000000000000001 /* WidgetRootView.swift */; };
+		A00000230000000000000000 /* WidgetHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000230000000000000001 /* WidgetHeaderView.swift */; };
+		A00000240000000000000000 /* WidgetVisualizerSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000240000000000000001 /* WidgetVisualizerSectionView.swift */; };
+		A00000250000000000000000 /* WidgetNowPlayingSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000250000000000000001 /* WidgetNowPlayingSectionView.swift */; };
+		A00000260000000000000000 /* WidgetControlsSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000260000000000000001 /* WidgetControlsSectionView.swift */; };
+		A00000270000000000000000 /* WidgetSlidersSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000270000000000000001 /* WidgetSlidersSectionView.swift */; };
+		A00000280000000000000000 /* PresetPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000280000000000000001 /* PresetPickerView.swift */; };
+		A00000290000000000000000 /* OnboardingCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000290000000000000001 /* OnboardingCardView.swift */; };
+		A000002A0000000000000000 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002A0000000000000001 /* OnboardingView.swift */; };
+		A000002B0000000000000000 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002B0000000000000001 /* SettingsView.swift */; };
+		A000002C0000000000000000 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002C0000000000000001 /* AudioCaptureService.swift */; };
+		A000002D0000000000000000 /* DSPEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002D0000000000000001 /* DSPEngine.swift */; };
+		A000002E0000000000000000 /* StubAudioServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002E0000000000000001 /* StubAudioServices.swift */; };
+		A000002F0000000000000000 /* PermissionsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002F0000000000000001 /* PermissionsService.swift */; };
+		A00000300000000000000000 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000300000000000000001 /* LaunchAtLoginService.swift */; };
+		A00000310000000000000000 /* OutputDeviceObserving.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000310000000000000001 /* OutputDeviceObserving.swift */; };
+		A00000320000000000000000 /* StubSystemServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000320000000000000001 /* StubSystemServices.swift */; };
+		A00000330000000000000000 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000330000000000000001 /* SettingsStore.swift */; };
+		A00000340000000000000000 /* PlaybackMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000340000000000000001 /* PlaybackMetadataService.swift */; };
+		A00000350000000000000000 /* StubPlaybackMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000350000000000000001 /* StubPlaybackMetadataService.swift */; };
+		A00000360000000000000000 /* PresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000360000000000000001 /* PresetStore.swift */; };
+		A00000370000000000000000 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000370000000000000001 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A00000110000000000000000 /* SpatialApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialApp.swift; sourceTree = "<group>"; };
+		A00000120000000000000000 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A00000130000000000000000 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
+		A000003A2000000000000000 /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
+		A000003A4000000000000000 /* SourceSelectionWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceSelectionWindowController.swift; sourceTree = "<group>"; };
+		A000003A6000000000000000 /* AudioSourceOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSourceOption.swift; sourceTree = "<group>"; };
+		A000003A8000000000000000 /* SourceSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceSelectionView.swift; sourceTree = "<group>"; };
+		A00000140000000000000000 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		A00000150000000000000000 /* SpatialAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAppModel.swift; sourceTree = "<group>"; };
+		A00000160000000000000000 /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
+		A00000170000000000000000 /* SpatialAppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAppState.swift; sourceTree = "<group>"; };
+		A00000180000000000000000 /* SpatialSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialSettings.swift; sourceTree = "<group>"; };
+		A00000190000000000000000 /* SpatialPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialPreset.swift; sourceTree = "<group>"; };
+		A000001A0000000000000000 /* NowPlayingInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingInfo.swift; sourceTree = "<group>"; };
+		A000001B0000000000000000 /* SpatialColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialColor.swift; sourceTree = "<group>"; };
+		A000001C0000000000000000 /* SpatialTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialTypography.swift; sourceTree = "<group>"; };
+		A000001D0000000000000000 /* SpatialMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialMetrics.swift; sourceTree = "<group>"; };
+		A000001E0000000000000000 /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
+		A000001F0000000000000000 /* PillBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillBadge.swift; sourceTree = "<group>"; };
+		A00000200000000000000000 /* KnobPlaceholderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnobPlaceholderView.swift; sourceTree = "<group>"; };
+		A00000210000000000000001 /* VisualizerBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerBarsView.swift; sourceTree = "<group>"; };
+		A00000220000000000000001 /* WidgetRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetRootView.swift; sourceTree = "<group>"; };
+		A00000230000000000000001 /* WidgetHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetHeaderView.swift; sourceTree = "<group>"; };
+		A00000240000000000000001 /* WidgetVisualizerSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetVisualizerSectionView.swift; sourceTree = "<group>"; };
+		A00000250000000000000001 /* WidgetNowPlayingSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetNowPlayingSectionView.swift; sourceTree = "<group>"; };
+		A00000260000000000000001 /* WidgetControlsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetControlsSectionView.swift; sourceTree = "<group>"; };
+		A00000270000000000000001 /* WidgetSlidersSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSlidersSectionView.swift; sourceTree = "<group>"; };
+		A00000280000000000000001 /* PresetPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetPickerView.swift; sourceTree = "<group>"; };
+		A00000290000000000000001 /* OnboardingCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCardView.swift; sourceTree = "<group>"; };
+		A000002A0000000000000001 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A000002B0000000000000001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A000002C0000000000000001 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		A000002D0000000000000001 /* DSPEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSPEngine.swift; sourceTree = "<group>"; };
+		A000002E0000000000000001 /* StubAudioServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubAudioServices.swift; sourceTree = "<group>"; };
+		A000002F0000000000000001 /* PermissionsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsService.swift; sourceTree = "<group>"; };
+		A00000300000000000000001 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
+		A00000310000000000000001 /* OutputDeviceObserving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDeviceObserving.swift; sourceTree = "<group>"; };
+		A00000320000000000000001 /* StubSystemServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubSystemServices.swift; sourceTree = "<group>"; };
+		A00000330000000000000001 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		A00000340000000000000001 /* PlaybackMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackMetadataService.swift; sourceTree = "<group>"; };
+		A00000350000000000000001 /* StubPlaybackMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubPlaybackMetadataService.swift; sourceTree = "<group>"; };
+		A00000360000000000000001 /* PresetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetStore.swift; sourceTree = "<group>"; };
+		A00000370000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00000380000000000000001 /* Spatial.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Spatial.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000390000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A000003A0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A00000400000000000000001 /* Spatial */,
+				A00000410000000000000001 /* Resources */,
+				A000003B0000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A000003B0000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000380000000000000001 /* Spatial.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000400000000000000001 /* Spatial */ = {
+			isa = PBXGroup;
+			children = (
+				A00000420000000000000001 /* SpatialApp */,
+				A00000430000000000000001 /* Features */,
+				A00000440000000000000001 /* Services */,
+				A00000450000000000000001 /* Shared */,
+			);
+			path = Spatial;
+			sourceTree = "<group>";
+		};
+		A00000410000000000000001 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000370000000000000001 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A00000420000000000000001 /* SpatialApp */ = {
+			isa = PBXGroup;
+			children = (
+				A00000110000000000000000 /* SpatialApp.swift */,
+				A00000120000000000000000 /* AppDelegate.swift */,
+				A00000130000000000000000 /* StatusBarController.swift */,
+				A000003A2000000000000000 /* OnboardingWindowController.swift */,
+				A000003A4000000000000000 /* SourceSelectionWindowController.swift */,
+			);
+			path = SpatialApp;
+			sourceTree = "<group>";
+		};
+		A00000430000000000000001 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				A00000460000000000000001 /* Widget */,
+				A00000470000000000000001 /* Onboarding */,
+				A00000480000000000000001 /* Settings */,
+				A00000490000000000000001 /* Presets */,
+				A000003A9000000000000000 /* SourceSelection */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		A00000440000000000000001 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A000004A0000000000000001 /* Audio */,
+				A000004B0000000000000001 /* System */,
+				A000004C0000000000000001 /* NowPlaying */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A00000450000000000000001 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A000004D0000000000000001 /* UI */,
+				A000004E0000000000000001 /* Models */,
+				A000004F0000000000000001 /* Support */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		A00000460000000000000001 /* Widget */ = {
+			isa = PBXGroup;
+			children = (
+				A00000220000000000000001 /* WidgetRootView.swift */,
+				A00000230000000000000001 /* WidgetHeaderView.swift */,
+				A00000240000000000000001 /* WidgetVisualizerSectionView.swift */,
+				A00000250000000000000001 /* WidgetNowPlayingSectionView.swift */,
+				A00000260000000000000001 /* WidgetControlsSectionView.swift */,
+				A00000270000000000000001 /* WidgetSlidersSectionView.swift */,
+			);
+			path = Widget;
+			sourceTree = "<group>";
+		};
+		A00000470000000000000001 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				A00000290000000000000001 /* OnboardingCardView.swift */,
+				A000002A0000000000000001 /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		A00000480000000000000001 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				A000002B0000000000000001 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		A00000490000000000000001 /* Presets */ = {
+			isa = PBXGroup;
+			children = (
+				A00000280000000000000001 /* PresetPickerView.swift */,
+				A00000360000000000000001 /* PresetStore.swift */,
+			);
+			path = Presets;
+			sourceTree = "<group>";
+		};
+		A000003A9000000000000000 /* SourceSelection */ = {
+			isa = PBXGroup;
+			children = (
+				A000003A8000000000000000 /* SourceSelectionView.swift */,
+			);
+			path = SourceSelection;
+			sourceTree = "<group>";
+		};
+		A000004A0000000000000001 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				A000002C0000000000000001 /* AudioCaptureService.swift */,
+				A000002D0000000000000001 /* DSPEngine.swift */,
+				A000002E0000000000000001 /* StubAudioServices.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		A000004B0000000000000001 /* System */ = {
+			isa = PBXGroup;
+			children = (
+				A000002F0000000000000001 /* PermissionsService.swift */,
+				A00000300000000000000001 /* LaunchAtLoginService.swift */,
+				A00000310000000000000001 /* OutputDeviceObserving.swift */,
+				A00000320000000000000001 /* StubSystemServices.swift */,
+				A00000330000000000000001 /* SettingsStore.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
+		A000004C0000000000000001 /* NowPlaying */ = {
+			isa = PBXGroup;
+			children = (
+				A00000340000000000000001 /* PlaybackMetadataService.swift */,
+				A00000350000000000000001 /* StubPlaybackMetadataService.swift */,
+			);
+			path = NowPlaying;
+			sourceTree = "<group>";
+		};
+		A000004D0000000000000001 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				A00000500000000000000001 /* Theme */,
+				A00000510000000000000001 /* Components */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		A000004E0000000000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A00000170000000000000000 /* SpatialAppState.swift */,
+				A00000180000000000000000 /* SpatialSettings.swift */,
+				A00000190000000000000000 /* SpatialPreset.swift */,
+				A000001A0000000000000000 /* NowPlayingInfo.swift */,
+				A000003A6000000000000000 /* AudioSourceOption.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A000004F0000000000000001 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				A00000140000000000000000 /* AppEnvironment.swift */,
+				A00000150000000000000000 /* SpatialAppModel.swift */,
+				A00000160000000000000000 /* MockData.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		A00000500000000000000001 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				A000001B0000000000000000 /* SpatialColor.swift */,
+				A000001C0000000000000000 /* SpatialTypography.swift */,
+				A000001D0000000000000000 /* SpatialMetrics.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		A00000510000000000000001 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A000001E0000000000000000 /* SectionCard.swift */,
+				A000001F0000000000000000 /* PillBadge.swift */,
+				A00000200000000000000000 /* KnobPlaceholderView.swift */,
+				A00000210000000000000001 /* VisualizerBarsView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000520000000000000001 /* Spatial */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000580000000000000001 /* Build configuration list for PBXNativeTarget "Spatial" */;
+			buildPhases = (
+				A00000530000000000000001 /* Sources */,
+				A00000390000000000000001 /* Frameworks */,
+				A00000540000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Spatial;
+			productName = Spatial;
+			productReference = A00000380000000000000001 /* Spatial.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000550000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A00000520000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000560000000000000001 /* Build configuration list for PBXProject "Spatial" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A000003A0000000000000001;
+			productRefGroup = A000003B0000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000520000000000000001 /* Spatial */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000540000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000370000000000000000 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000530000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000010000000000000000 /* SpatialApp.swift in Sources */,
+				A00000020000000000000000 /* AppDelegate.swift in Sources */,
+				A00000030000000000000000 /* StatusBarController.swift in Sources */,
+				A000003A1000000000000000 /* OnboardingWindowController.swift in Sources */,
+				A000003A3000000000000000 /* SourceSelectionWindowController.swift in Sources */,
+				A00000040000000000000000 /* AppEnvironment.swift in Sources */,
+				A00000050000000000000000 /* SpatialAppModel.swift in Sources */,
+				A00000060000000000000000 /* MockData.swift in Sources */,
+				A00000070000000000000000 /* SpatialAppState.swift in Sources */,
+				A00000080000000000000000 /* SpatialSettings.swift in Sources */,
+				A00000090000000000000000 /* SpatialPreset.swift in Sources */,
+				A000000A0000000000000000 /* NowPlayingInfo.swift in Sources */,
+				A000003A5000000000000000 /* AudioSourceOption.swift in Sources */,
+				A000000B0000000000000000 /* SpatialColor.swift in Sources */,
+				A000000C0000000000000000 /* SpatialTypography.swift in Sources */,
+				A000000D0000000000000000 /* SpatialMetrics.swift in Sources */,
+				A000000E0000000000000000 /* SectionCard.swift in Sources */,
+				A000000F0000000000000000 /* PillBadge.swift in Sources */,
+				A00000100000000000000000 /* KnobPlaceholderView.swift in Sources */,
+				A00000210000000000000000 /* VisualizerBarsView.swift in Sources */,
+				A00000220000000000000000 /* WidgetRootView.swift in Sources */,
+				A00000230000000000000000 /* WidgetHeaderView.swift in Sources */,
+				A00000240000000000000000 /* WidgetVisualizerSectionView.swift in Sources */,
+				A00000250000000000000000 /* WidgetNowPlayingSectionView.swift in Sources */,
+				A00000260000000000000000 /* WidgetControlsSectionView.swift in Sources */,
+				A00000270000000000000000 /* WidgetSlidersSectionView.swift in Sources */,
+				A00000280000000000000000 /* PresetPickerView.swift in Sources */,
+				A00000290000000000000000 /* OnboardingCardView.swift in Sources */,
+				A000002A0000000000000000 /* OnboardingView.swift in Sources */,
+				A000002B0000000000000000 /* SettingsView.swift in Sources */,
+				A000003A7000000000000000 /* SourceSelectionView.swift in Sources */,
+				A000002C0000000000000000 /* AudioCaptureService.swift in Sources */,
+				A000002D0000000000000000 /* DSPEngine.swift in Sources */,
+				A000002E0000000000000000 /* StubAudioServices.swift in Sources */,
+				A000002F0000000000000000 /* PermissionsService.swift in Sources */,
+				A00000300000000000000000 /* LaunchAtLoginService.swift in Sources */,
+				A00000310000000000000000 /* OutputDeviceObserving.swift in Sources */,
+				A00000320000000000000000 /* StubSystemServices.swift in Sources */,
+				A00000330000000000000000 /* SettingsStore.swift in Sources */,
+				A00000340000000000000000 /* PlaybackMetadataService.swift in Sources */,
+				A00000350000000000000000 /* StubPlaybackMetadataService.swift in Sources */,
+				A00000360000000000000000 /* PresetStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000570000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spatial.app;
+				PRODUCT_MODULE_NAME = SpatialDesktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A00000590000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spatial.app;
+				PRODUCT_MODULE_NAME = SpatialDesktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A000005A0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A000005B0000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000560000000000000001 /* Build configuration list for PBXProject "Spatial" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A000005A0000000000000001 /* Debug */,
+				A000005B0000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000580000000000000001 /* Build configuration list for PBXNativeTarget "Spatial" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000570000000000000001 /* Debug */,
+				A00000590000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000550000000000000001 /* Project object */;
+}
