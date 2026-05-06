@@ -62,27 +62,32 @@ final class AudioDeviceService {
     }
 
     func setSystemOutputDevice(_ device: AudioOutputDevice) throws {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
         var deviceID = device.id
-        let status = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            UInt32(MemoryLayout<AudioDeviceID>.size),
-            &deviceID
-        )
+        let selectors: [AudioObjectPropertySelector] = [
+            kAudioHardwarePropertyDefaultOutputDevice,
+            kAudioHardwarePropertyDefaultSystemOutputDevice
+        ]
 
-        guard status == noErr else {
-            logger.error("Failed to set system output device '\(device.name, privacy: .public)': OSStatus=\(status)")
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
-                NSLocalizedDescriptionKey: "Could not set system output device to \(device.name)"
-            ])
+        for selector in selectors {
+            var address = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            let status = AudioObjectSetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                UInt32(MemoryLayout<AudioDeviceID>.size),
+                &deviceID
+            )
+            if status != noErr {
+                logger.error("Failed to set system output device '\(device.name, privacy: .public)' selector=\(selector): OSStatus=\(status)")
+                throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
+                    NSLocalizedDescriptionKey: "Could not set system output device to \(device.name)"
+                ])
+            }
         }
 
         logger.info("System output device set to: \(device.name, privacy: .public) uid=\(device.uid, privacy: .public)")

@@ -320,9 +320,6 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService, SCStreamOutp
             let stream = SCStream(filter: contentFilter, configuration: configuration, delegate: self)
 
             do {
-                // ScreenCaptureKit always generates video frames even for audio-only capture.
-                // Both output types must be registered or the system errors on every video frame
-                // and stops delivering audio samples entirely.
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
                 try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
             } catch {
@@ -647,23 +644,15 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         }
     }
 
-    private func applyOutputDevicePin(_ deviceID: AudioDeviceID) {
-        // kAudioOutputUnitProperty_CurrentDevice must be set while the audio unit is
-        // stopped. Setting it on a running unit is silently ignored by CoreAudio.
-        let wasRunning = engine.isRunning
-        if wasRunning {
-            playerNode.stop()
-            engine.stop()
-        }
-
+    @discardableResult
+    private func applyOutputDevicePin(_ deviceID: AudioDeviceID) -> Bool {
         guard let audioUnit = engine.outputNode.audioUnit else {
-            logger.error("Cannot pin output device: output audio unit unavailable")
-            if wasRunning { try? engine.start() }
-            return
+            logger.error("Cannot pin output device: output audio unit unavailable (engine.isRunning=\(self.engine.isRunning, privacy: .public))")
+            return false
         }
 
         var mutableID = deviceID
-        let status = AudioUnitSetProperty(
+        let setStatus = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global,
@@ -672,21 +661,13 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
 
-        if status == noErr {
-            logger.info("Engine output pinned to hardware device ID=\(deviceID)")
-        } else {
-            logger.error("Failed to pin engine output device ID=\(deviceID): OSStatus=\(status)")
-        }
+        var actualID: AudioDeviceID = 0
+        var actualSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioUnitGetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &actualID, &actualSize)
 
-        if wasRunning {
-            do {
-                try engine.start()
-                applyRealtimeSettings()
-                if isCaptureRunning { playerNode.play() }
-            } catch {
-                logger.error("Failed to restart engine after pin: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+        let matched = actualID == deviceID
+        logger.info("Pin output device: target=\(deviceID) actual=\(actualID) setStatus=\(setStatus) pinned=\(matched, privacy: .public)")
+        return matched
     }
 
     private func configureEngineGraph() {
@@ -733,28 +714,18 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             return
         }
 
-        // Apply the pin BEFORE starting so the engine never renders a single frame
-        // to the wrong device. applyOutputDevicePin requires the engine to be stopped,
-        // so this is the correct window to set it.
-        if let deviceID = pinnedOutputDeviceID, let audioUnit = engine.outputNode.audioUnit {
-            var mutableID = deviceID
-            let status = AudioUnitSetProperty(
-                audioUnit,
-                kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global,
-                0,
-                &mutableID,
-                UInt32(MemoryLayout<AudioDeviceID>.size)
-            )
-            if status == noErr {
-                logger.info("Engine output pre-pinned to device ID=\(deviceID) before start")
-            } else {
-                logger.error("Pre-pin failed for device ID=\(deviceID): OSStatus=\(status)")
-            }
-        }
-
         try engine.start()
         applyRealtimeSettings()
+
+        // Re-apply the pin AFTER start. engine.start() initialises the AUHAL and may
+        // reset its current device to the system default. Setting the property on the
+        // running unit overrides that without stopping the engine again.
+        if let deviceID = pinnedOutputDeviceID {
+            let pinned = applyOutputDevicePin(deviceID)
+            if !pinned {
+                logger.warning("Post-start pin did not take effect for device ID=\(deviceID) — engine may output to system default")
+            }
+        }
     }
 
     private func installEngineConfigurationObserver() {

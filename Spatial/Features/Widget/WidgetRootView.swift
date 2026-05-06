@@ -4,10 +4,6 @@ struct WidgetRootView: View {
     @ObservedObject var model: SpatialAppModel
     let openSettings: () -> Void
 
-    @State private var isPointerInsideNotch = false
-    @State private var isPointerInsideCard = false
-    @State private var pendingCollapseWorkItem: DispatchWorkItem?
-
     var body: some View {
         ZStack(alignment: .top) {
             notchBar
@@ -20,15 +16,6 @@ struct WidgetRootView: View {
                         insertion: .move(edge: .top).combined(with: .opacity),
                         removal: .opacity
                     ))
-                    .onHover { hovering in
-                        isPointerInsideCard = hovering
-
-                        if !hovering {
-                            scheduleCollapseIfNeeded()
-                        } else {
-                            pendingCollapseWorkItem?.cancel()
-                        }
-                    }
             }
         }
         .frame(
@@ -40,37 +27,12 @@ struct WidgetRootView: View {
 
     private var notchBar: some View {
         CollapsedWidgetView(model: model)
+            .padding(.bottom, 16)
             .onTapGesture {
                 withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
                     model.expandWidget()
                 }
             }
-            .onHover { hovering in
-                isPointerInsideNotch = hovering
-
-                if !hovering {
-                    scheduleCollapseIfNeeded()
-                } else {
-                    pendingCollapseWorkItem?.cancel()
-                }
-            }
-    }
-
-    private func scheduleCollapseIfNeeded() {
-        pendingCollapseWorkItem?.cancel()
-
-        guard model.widgetDisplayMode == .expanded else { return }
-
-        let workItem = DispatchWorkItem {
-            guard !isPointerInsideNotch && !isPointerInsideCard else { return }
-
-            withAnimation(.easeOut(duration: 0.18)) {
-                model.collapseWidgetIfPossible()
-            }
-        }
-
-        pendingCollapseWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
     }
 }
 
@@ -390,14 +352,10 @@ private struct CollapsedWidgetView: View {
             CompactVisualizerGlyph(bars: Array(model.visualizerBars.prefix(4)))
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 8) {
-                    Text(model.collapsedTitle)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(SpatialColor.textPrimary)
-                        .lineLimit(1)
-
-                    SourceBadge(source: model.selectedAudioSource)
-                }
+                Text(model.collapsedTitle)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(SpatialColor.textPrimary)
+                    .lineLimit(1)
 
                 Text(model.collapsedSubtitle)
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -413,23 +371,8 @@ private struct CollapsedWidgetView: View {
         .padding(.horizontal, 18)
         .frame(width: SpatialMetrics.popoverWidth - 36, height: 36)
         .background(
-            ZStack {
-                FluidBiasGlow()
-                    .scaleEffect(x: 1.08, y: 1.95)
-
-                Capsule(style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0.96),
-                                SpatialColor.accent.opacity(0.16),
-                                Color.black.opacity(0.94)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-            }
+            Capsule(style: .continuous)
+                .fill(Color.black)
         )
         .overlay(
             Capsule(style: .continuous)
@@ -437,44 +380,6 @@ private struct CollapsedWidgetView: View {
         )
         .shadow(color: .black.opacity(0.26), radius: 14, y: 6)
         .contentShape(Capsule())
-    }
-}
-
-private struct FluidBiasGlow: View {
-    @State private var drift = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Circle()
-                    .fill(SpatialColor.accent.opacity(0.32))
-                    .frame(width: geometry.size.width * 0.36, height: geometry.size.height * 2.9)
-                    .blur(radius: 32)
-                    .offset(
-                        x: drift ? geometry.size.width * 0.22 : -geometry.size.width * 0.18,
-                        y: drift ? -3 : 3
-                    )
-
-                Circle()
-                    .fill(SpatialColor.accentLight.opacity(0.24))
-                    .frame(width: geometry.size.width * 0.24, height: geometry.size.height * 2.2)
-                    .blur(radius: 26)
-                    .offset(
-                        x: drift ? -geometry.size.width * 0.20 : geometry.size.width * 0.16,
-                        y: drift ? 4 : -4
-                    )
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .opacity(0.95)
-            .drawingGroup()
-            .onAppear {
-                guard !drift else { return }
-                withAnimation(.easeInOut(duration: 4.2).repeatForever(autoreverses: true)) {
-                    drift = true
-                }
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 

@@ -3,7 +3,7 @@ import CoreGraphics
 enum SpatialMetrics {
     static let popoverWidth: CGFloat = 452
     static let widgetExpandedHeight: CGFloat = 780
-    static let widgetCollapsedHeight: CGFloat = 54
+    static let widgetCollapsedHeight: CGFloat = 90
     static let widgetExpandedTopOffset: CGFloat = 44
     static let settingsPopoverWidth: CGFloat = 320
     static let settingsPopoverHeight: CGFloat = 430
