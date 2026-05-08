@@ -10,6 +10,7 @@ final class StatusBarController: NSObject {
     private var sourceSelectionWindowController: SourceSelectionWindowController?
     private var widgetWindowController: WidgetWindowController?
     private var setupProgressTimer: Timer?
+    private var hasAutoPresentedWidgetForCompletedFlow = false
     private let environment: AppEnvironment
     private let appModel: SpatialAppModel
 
@@ -183,13 +184,16 @@ final class StatusBarController: NSObject {
 
         switch appModel.state.onboardingStatus {
         case .needsOnboarding:
+            hasAutoPresentedWidgetForCompletedFlow = false
             break
         case .needsSourceSelection:
+            hasAutoPresentedWidgetForCompletedFlow = false
             widgetWindowController?.close()
             presentSourceSelectionIfNeeded()
         case .completed:
             sourceSelectionWindowController?.close()
             sourceSelectionWindowController = nil
+            presentWidgetAfterSetupIfNeeded()
         }
     }
 
@@ -202,7 +206,7 @@ final class StatusBarController: NSObject {
         case .needsSourceSelection:
             presentSourceSelectionIfNeeded()
         case .completed:
-            break
+            presentWidgetAfterSetupIfNeeded()
         }
     }
 
@@ -228,5 +232,16 @@ final class StatusBarController: NSObject {
         }
 
         sourceSelectionWindowController?.showWindow(nil)
+    }
+
+    private func presentWidgetAfterSetupIfNeeded() {
+        guard !hasAutoPresentedWidgetForCompletedFlow,
+              let widgetWindowController,
+              widgetWindowController.window?.isVisible != true else { return }
+
+        hasAutoPresentedWidgetForCompletedFlow = true
+        settingsPopover.performClose(nil)
+        widgetWindowController.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
