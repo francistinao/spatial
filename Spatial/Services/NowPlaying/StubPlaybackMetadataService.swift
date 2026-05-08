@@ -5,6 +5,7 @@ import OSLog
 final class StubPlaybackMetadataService: PlaybackMetadataService {
     private let logger = Logger(subsystem: "com.spatial.app", category: "NowPlaying")
     private let fallback = MockData.previewNowPlaying
+    private let fileManager = FileManager.default
     private var lastLoggedSystemAudioSignature: String?
     private var lastLoggedBrowserTabSignature: String?
 
@@ -48,6 +49,14 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
         end tell
         """)
 
+        let artworkURL = appleScriptValue("""
+        tell application "\(appName)"
+            if player state is playing then
+                return artwork url of current track
+            end if
+        end tell
+        """).flatMap(URL.init(string:))
+
         if let title, !title.isEmpty {
             logger.info("Spotify now playing detected: \(title, privacy: .public)")
             return NowPlayingInfo(
@@ -56,6 +65,7 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
                 sourceName: appName,
                 isPlaying: true,
                 source: .spotify,
+                artworkURL: artworkURL,
                 artworkSystemName: "music.note.list"
             )
         }
@@ -86,7 +96,16 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
         end tell
         """)
 
+        let databaseID = appleScriptValue("""
+        tell application "\(appName)"
+            if player state is playing then
+                return (database ID of current track) as text
+            end if
+        end tell
+        """)
+
         if let title, !title.isEmpty {
+            let artworkURL = databaseID.flatMap(cachedMusicArtworkURL(for:))
             logger.info("Apple Music now playing detected: \(title, privacy: .public)")
             return NowPlayingInfo(
                 trackName: title,
@@ -94,6 +113,7 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
                 sourceName: "Apple Music",
                 isPlaying: true,
                 source: .appleMusic,
+                artworkURL: artworkURL,
                 artworkSystemName: "music.note"
             )
         }
@@ -115,6 +135,7 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
             sourceName: "System Audio",
             isPlaying: true,
             source: .systemAudio,
+            artworkURL: nil,
             artworkSystemName: "desktopcomputer"
         )
     }
@@ -137,6 +158,7 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
                     sourceName: "System Audio",
                     isPlaying: true,
                     source: .systemAudio,
+                    artworkURL: nil,
                     artworkSystemName: "globe"
                 )
             }
@@ -196,6 +218,7 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
             sourceName: source.title.replacingOccurrences(of: "\n", with: " "),
             isPlaying: false,
             source: source,
+            artworkURL: nil,
             artworkSystemName: source == .systemAudio ? "desktopcomputer" : source.symbolName
         )
     }
@@ -235,5 +258,72 @@ final class StubPlaybackMetadataService: PlaybackMetadataService {
         }
 
         return result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func appleScriptDescriptor(_ source: String) -> NSAppleEventDescriptor? {
+        guard let script = NSAppleScript(source: source) else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+
+        if error != nil {
+            return nil
+        }
+
+        return result
+    }
+
+    private func cachedMusicArtworkURL(for databaseID: String) -> URL? {
+        let cacheURL = artworkCacheDirectory.appendingPathComponent("music-\(sanitizedCacheKey(databaseID)).png")
+        if fileManager.fileExists(atPath: cacheURL.path) {
+            return cacheURL
+        }
+
+        guard let descriptor = appleScriptDescriptor("""
+        tell application "Music"
+            if player state is playing then
+                set currentTrack to current track
+                if (count of artworks of currentTrack) > 0 then
+                    return data of artwork 1 of currentTrack
+                end if
+            end if
+        end tell
+        """) else {
+            return nil
+        }
+
+        let artworkData = descriptor.data
+        guard !artworkData.isEmpty,
+              let image = NSImage(data: artworkData),
+        let pngData = pngData(from: image) else {
+            return nil
+        }
+
+        do {
+            try fileManager.createDirectory(at: artworkCacheDirectory, withIntermediateDirectories: true, attributes: nil)
+            try pngData.write(to: cacheURL, options: .atomic)
+            return cacheURL
+        } catch {
+            logger.error("Failed to cache Apple Music artwork: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    private var artworkCacheDirectory: URL {
+        let baseURL = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        return baseURL.appendingPathComponent("SpatialArtworkCache", isDirectory: true)
+    }
+
+    private func sanitizedCacheKey(_ key: String) -> String {
+        key.replacingOccurrences(of: #"[^A-Za-z0-9_-]"#, with: "-", options: .regularExpression)
+    }
+
+    private func pngData(from image: NSImage) -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+
+        return bitmap.representation(using: .png, properties: [:])
     }
 }

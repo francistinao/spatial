@@ -6,5 +6,6 @@ struct NowPlayingInfo: Equatable {
     var sourceName: String
     var isPlaying: Bool
     var source: AudioSourceOption?
+    var artworkURL: URL?
     var artworkSystemName: String?
 }

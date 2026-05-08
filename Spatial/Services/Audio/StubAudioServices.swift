@@ -54,8 +54,8 @@ final class StubDSPEngine: InputReactiveDSPEngine {
 
     func configure(with settings: SpatialSettings) {
         currentSettings = settings
-        processingGraphDescription = "Configured mock graph (rotation \(settings.rotation), width \(settings.width))"
-        logger.debug("Configured stub DSP. rotation=\(settings.rotation, format: .fixed(precision: 2)) depth=\(settings.depth, format: .fixed(precision: 2)) reverb=\(settings.reverb, format: .fixed(precision: 2)) width=\(settings.width, format: .fixed(precision: 2)) speed=\(settings.speed, format: .fixed(precision: 2)) elevation=\(settings.elevation, format: .fixed(precision: 2))")
+        processingGraphDescription = "Configured mock graph (rotation \(settings.rotation), width \(settings.width), focus \(settings.centerFocus), curve \(settings.motionCurve))"
+        logger.debug("Configured stub DSP. rotation=\(settings.rotation, format: .fixed(precision: 2)) depth=\(settings.depth, format: .fixed(precision: 2)) reverb=\(settings.reverb, format: .fixed(precision: 2)) width=\(settings.width, format: .fixed(precision: 2)) speed=\(settings.speed, format: .fixed(precision: 2)) elevation=\(settings.elevation, format: .fixed(precision: 2)) centerFocus=\(settings.centerFocus, format: .fixed(precision: 2)) motionCurve=\(settings.motionCurve, format: .fixed(precision: 2))")
     }
 
     func start(for source: AudioSourceOption) {
@@ -121,15 +121,27 @@ final class StubDSPEngine: InputReactiveDSPEngine {
             let depthBias = currentSettings.depth * 0.20
             let reverbSwell = currentSettings.reverb * 0.10
             let elevationSpread = currentSettings.elevation * 0.08
-            let wave = sin((phase * orbitSpeed) + (normalizedIndex * (6.0 + (currentSettings.rotation * 3.5)))) * (0.10 + beat * 0.20)
-            let pulse = cos((phase * 0.55) + (normalizedIndex * (10.0 + elevationSpread * 40.0))) * (0.05 + beat * 0.18)
+            let focusTightness = 1 - (currentSettings.centerFocus * 0.48)
+            let waveSeed = (phase * orbitSpeed) + (normalizedIndex * (6.0 + (currentSettings.rotation * 3.5)))
+            let pulseSeed = (phase * (0.55 + (currentSettings.motionCurve * 0.18))) + (normalizedIndex * (10.0 + elevationSpread * 40.0))
+            let wave = shapedMotionValue(for: waveSeed, curve: currentSettings.motionCurve) * (0.10 + beat * 0.20) * focusTightness
+            let pulse = shapedMotionValue(for: pulseSeed, curve: currentSettings.motionCurve * 0.75) * (0.05 + beat * 0.18) * (0.88 - (currentSettings.centerFocus * 0.22))
             let beatLift = beat * (0.24 + depthBias)
             let floor = isBypassed ? 0.08 : 0.12
-            let amplitude = floor + beatLift + wave + pulse + widthBias + reverbSwell
+            let centerAnchor = currentSettings.centerFocus * 0.06
+            let amplitude = floor + beatLift + wave + pulse + widthBias + reverbSwell + centerAnchor
             return max(0.08, min(0.96, amplitude))
         }
 
         onVisualizerUpdate?(bars)
+    }
+
+    private func shapedMotionValue(for phase: Double, curve: Double) -> Double {
+        let base = sin(phase)
+        let aggressive = base.sign == .minus
+            ? -pow(abs(base), max(0.35, 1 - (curve * 0.55)))
+            : pow(abs(base), max(0.35, 1 - (curve * 0.55)))
+        return (base * (1 - curve)) + (aggressive * curve)
     }
 }
 
@@ -847,8 +859,8 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
 
     func configure(with settings: SpatialSettings) {
         currentSettings = settings
-        processingGraphDescription = "Live graph (rotation \(settings.rotation), width \(settings.width), reverb \(settings.reverb))"
-        logger.debug("Configured live DSP. rotation=\(settings.rotation, format: .fixed(precision: 2)) depth=\(settings.depth, format: .fixed(precision: 2)) reverb=\(settings.reverb, format: .fixed(precision: 2)) width=\(settings.width, format: .fixed(precision: 2)) speed=\(settings.speed, format: .fixed(precision: 2)) elevation=\(settings.elevation, format: .fixed(precision: 2))")
+        processingGraphDescription = "Live graph (rotation \(settings.rotation), width \(settings.width), reverb \(settings.reverb), focus \(settings.centerFocus), curve \(settings.motionCurve))"
+        logger.debug("Configured live DSP. rotation=\(settings.rotation, format: .fixed(precision: 2)) depth=\(settings.depth, format: .fixed(precision: 2)) reverb=\(settings.reverb, format: .fixed(precision: 2)) width=\(settings.width, format: .fixed(precision: 2)) speed=\(settings.speed, format: .fixed(precision: 2)) elevation=\(settings.elevation, format: .fixed(precision: 2)) centerFocus=\(settings.centerFocus, format: .fixed(precision: 2)) motionCurve=\(settings.motionCurve, format: .fixed(precision: 2))")
 
         processingQueue.async { [weak self] in
             self?.applyRealtimeSettings()
@@ -1061,7 +1073,8 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         }
 
         let reverbMix = Float(min(96, 8 + (currentSettings.reverb * 72) + (currentSettings.elevation * 10)))
-        let depthVolume = Float(0.88 + (currentSettings.depth * 0.12))
+        let focusCompensation = currentSettings.centerFocus * 0.04
+        let depthVolume = Float(0.86 + (currentSettings.depth * 0.12) + focusCompensation)
         reverbNode.wetDryMix = reverbMix
         motionMixer.outputVolume = depthVolume
     }
@@ -1093,10 +1106,13 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
 
         phase += max(currentSettings.speed, 0.2) * 0.045
 
-        let panRange = min(1.0, 0.12 + (currentSettings.rotation * 0.58) + (currentSettings.width * 0.30))
-        let pan = sin(phase) * panRange
-        let pulse = cos(phase * 0.5 + currentSettings.elevation * .pi)
-        let volumeMotion = 0.90 + (currentSettings.depth * 0.08) + (pulse * currentSettings.elevation * 0.04)
+        let motionWave = shapedMotionValue(for: phase, curve: currentSettings.motionCurve)
+        let pulseSeed = (phase * (0.5 + (currentSettings.motionCurve * 0.25))) + (currentSettings.elevation * .pi)
+        let pulse = shapedMotionValue(for: pulseSeed, curve: currentSettings.motionCurve * 0.7)
+        let centerTightness = 1 - (currentSettings.centerFocus * 0.42)
+        let panRange = min(1.0, 0.12 + (currentSettings.rotation * 0.58) + (currentSettings.width * 0.30)) * centerTightness
+        let pan = motionWave * panRange
+        let volumeMotion = 0.91 + (currentSettings.depth * 0.08) + (pulse * currentSettings.elevation * 0.04 * (0.82 - (currentSettings.centerFocus * 0.24)))
 
         motionMixer.pan = Float(max(-1, min(1, pan)))
         motionMixer.outputVolume = Float(max(0.5, min(1.2, volumeMotion)))
@@ -1111,13 +1127,25 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             let depthBias = currentSettings.depth * 0.24
             let reverbSwell = currentSettings.reverb * 0.08
             let elevationSpread = currentSettings.elevation * 0.10
-            let wave = sin((phase * orbitSpeed) + (normalizedIndex * (5.0 + (currentSettings.rotation * 4.0)))) * (0.12 + beat * 0.18)
-            let pulse = cos((phase * 0.7) + (normalizedIndex * (11.0 + elevationSpread * 35.0))) * (0.05 + beat * 0.15)
-            let amplitude = 0.10 + (beat * (0.30 + depthBias)) + wave + pulse + widthBias + reverbSwell
+            let focusTightness = 1 - (currentSettings.centerFocus * 0.48)
+            let waveSeed = (phase * orbitSpeed) + (normalizedIndex * (5.0 + (currentSettings.rotation * 4.0)))
+            let pulseSeed = (phase * (0.7 + (currentSettings.motionCurve * 0.22))) + (normalizedIndex * (11.0 + elevationSpread * 35.0))
+            let wave = shapedMotionValue(for: waveSeed, curve: currentSettings.motionCurve) * (0.12 + beat * 0.18) * focusTightness
+            let pulse = shapedMotionValue(for: pulseSeed, curve: currentSettings.motionCurve * 0.75) * (0.05 + beat * 0.15) * (0.88 - (currentSettings.centerFocus * 0.22))
+            let centerAnchor = currentSettings.centerFocus * 0.06
+            let amplitude = 0.10 + (beat * (0.30 + depthBias)) + wave + pulse + widthBias + reverbSwell + centerAnchor
             return max(0.08, min(0.98, amplitude))
         }
 
         onVisualizerUpdate?(bars)
+    }
+
+    private func shapedMotionValue(for phase: Double, curve: Double) -> Double {
+        let base = sin(phase)
+        let aggressive = base.sign == .minus
+            ? -pow(abs(base), max(0.35, 1 - (curve * 0.55)))
+            : pow(abs(base), max(0.35, 1 - (curve * 0.55)))
+        return (base * (1 - curve)) + (aggressive * curve)
     }
 
     private func emitIdleVisualizerFrame() {

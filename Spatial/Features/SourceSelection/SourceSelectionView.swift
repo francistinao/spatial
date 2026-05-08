@@ -1,66 +1,84 @@
+import AppKit
 import SwiftUI
+
+@MainActor
+final class SourceSelectionPanelState: ObservableObject {
+    @Published var isExpanded = false
+
+    func setExpanded(_ expanded: Bool, animated: Bool = true) {
+        guard isExpanded != expanded else { return }
+
+        if animated {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86, blendDuration: 0.12)) {
+                isExpanded = expanded
+            }
+        } else {
+            isExpanded = expanded
+        }
+    }
+
+    func toggleExpanded() {
+        setExpanded(!isExpanded)
+    }
+}
 
 struct SourceSelectionView: View {
     @ObservedObject var model: SpatialAppModel
+    @ObservedObject var panelState: SourceSelectionPanelState
     var onConfigure: () -> Void = {}
     var onInitialize: () -> Void = {}
-    @State private var isExpanded = false
-    @State private var isPointerInsideNotch = false
-    @State private var isPointerInsideCard = false
-    @State private var pendingCollapseWorkItem: DispatchWorkItem?
 
     var body: some View {
         ZStack(alignment: .top) {
-            notchBar
-                .padding(.top, 6)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    panelState.setExpanded(false)
+                }
 
-            if isExpanded {
+            notchBar
+                .padding(.top, SpatialMetrics.sourceSelectionNotchTopPadding)
+                .zIndex(1)
+
+            if panelState.isExpanded {
                 expandedCard
-                    .padding(.top, 34)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .opacity
-                    ))
+                    .padding(.top, expandedCardTopPadding)
+                    .transition(.attachedDropdown)
+                    .zIndex(0)
             }
         }
         .frame(
             width: SpatialMetrics.sourceSelectionWidth,
-            height: isExpanded ? SpatialMetrics.sourceSelectionExpandedHeight : SpatialMetrics.sourceSelectionCollapsedHeight,
+            height: panelState.isExpanded ? SpatialMetrics.sourceSelectionExpandedHeight : SpatialMetrics.sourceSelectionCollapsedHeight,
             alignment: .top
         )
     }
 
     private var notchBar: some View {
-        HStack(spacing: 18) {
-            Image(systemName: "waveform")
-                .font(SpatialTypography.text(13))
-                .foregroundStyle(Color.white.opacity(0.82))
+        Button(action: panelState.toggleExpanded) {
+            HStack(spacing: 18) {
+                Image(systemName: "waveform")
+                    .font(SpatialTypography.text(13))
+                    .foregroundStyle(Color.white.opacity(0.82))
 
-            Circle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 8, height: 8)
+                Circle()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 8, height: 8)
 
-            Image(systemName: "bell.slash")
-                .font(SpatialTypography.text(12))
-                .foregroundStyle(Color.white.opacity(0.78))
-        }
-        .padding(.horizontal, 28)
-        .frame(width: 182, height: 36)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Color.black)
-        )
-        .shadow(color: Color.black.opacity(0.22), radius: 14, y: 6)
-        .contentShape(Capsule())
-        .onHover { hovering in
-            isPointerInsideNotch = hovering
-
-            if hovering {
-                expandWidget()
-            } else {
-                scheduleCollapseIfNeeded()
+                Image(systemName: "bell.slash")
+                    .font(SpatialTypography.text(12))
+                    .foregroundStyle(Color.white.opacity(0.78))
             }
+            .padding(.horizontal, 28)
+            .frame(width: 182, height: SpatialMetrics.sourceSelectionNotchHeight)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.black)
+            )
+            .shadow(color: Color.black.opacity(0.22), radius: 14, y: 6)
+            .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 
     private var expandedCard: some View {
@@ -88,15 +106,7 @@ struct SourceSelectionView: View {
         )
         .shadow(color: Color.black.opacity(0.20), radius: 18, y: 12)
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .onHover { hovering in
-            isPointerInsideCard = hovering
-
-            if hovering {
-                expandWidget()
-            } else {
-                scheduleCollapseIfNeeded()
-            }
-        }
+        .onTapGesture { }
     }
 
     private var header: some View {
@@ -193,18 +203,8 @@ struct SourceSelectionView: View {
 
     private var footer: some View {
         HStack {
-            Button(action: onConfigure) {
-                HStack(spacing: 8) {
-                    Image(systemName: "gearshape")
-                    Text("Configuration")
-                }
-                .font(SpatialTypography.text(13))
-                .foregroundStyle(SpatialColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
+            Spacer ()
+            
             Button(action: onInitialize) {
                 Text(model.sourceSelectionButtonTitle)
                     .font(SpatialTypography.text(14))
@@ -213,13 +213,7 @@ struct SourceSelectionView: View {
                     .padding(.vertical, 12)
                     .background(
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(hex: 0x8A63F2), SpatialColor.accent],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .fill(SpatialColor.accent)
                     )
             }
             .buttonStyle(.plain)
@@ -258,29 +252,30 @@ struct SourceSelectionView: View {
         model.engineStatusText.uppercased()
     }
 
-    private func expandWidget() {
-        pendingCollapseWorkItem?.cancel()
-
-        guard !isExpanded else { return }
-
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-            isExpanded = true
-        }
+    private var expandedCardTopPadding: CGFloat {
+        SpatialMetrics.sourceSelectionNotchTopPadding
+            + SpatialMetrics.sourceSelectionNotchHeight
+            + SpatialMetrics.sourceSelectionNotchCardGap
     }
+}
 
-    private func scheduleCollapseIfNeeded() {
-        pendingCollapseWorkItem?.cancel()
+private struct AttachedDropdownModifier: ViewModifier {
+    let isActive: Bool
 
-        let workItem = DispatchWorkItem {
-            guard !isPointerInsideNotch && !isPointerInsideCard else { return }
+    func body(content: Content) -> some View {
+        content
+            .opacity(isActive ? 0 : 1)
+            .scaleEffect(x: 0.98, y: isActive ? 0.92 : 1, anchor: .top)
+            .offset(y: isActive ? -10 : 0)
+    }
+}
 
-            withAnimation(.easeOut(duration: 0.18)) {
-                isExpanded = false
-            }
-        }
-
-        pendingCollapseWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
+private extension AnyTransition {
+    static var attachedDropdown: AnyTransition {
+        .modifier(
+            active: AttachedDropdownModifier(isActive: true),
+            identity: AttachedDropdownModifier(isActive: false)
+        )
     }
 }
 
@@ -313,9 +308,7 @@ private struct AudioSourceCard: View {
                         .fill(source.statusTint.opacity(isSelected ? 0.95 : 0.24))
                         .frame(width: 42, height: 42)
 
-                    Image(systemName: source.symbolName)
-                        .font(SpatialTypography.text(18))
-                        .foregroundStyle(isSelected ? Color.black.opacity(0.7) : source.statusTint)
+                    sourceIcon
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -344,5 +337,42 @@ private struct AudioSourceCard: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var sourceIcon: some View {
+        if let brandIcon = sourceBrandIcon {
+            Image(nsImage: brandIcon)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .renderingMode(.original)
+                .frame(width: 20, height: 20)
+        } else {
+            Image(systemName: source.symbolName)
+                .font(SpatialTypography.text(18))
+                .foregroundStyle(isSelected ? Color.black.opacity(0.7) : source.statusTint)
+        }
+    }
+
+    private var sourceBrandIcon: NSImage? {
+        guard let resource = source.brandIconResource else {
+            return nil
+        }
+
+        let url = Bundle.main.url(
+            forResource: resource.name,
+            withExtension: resource.extension,
+            subdirectory: "Brand"
+        ) ?? Bundle.main.url(
+            forResource: resource.name,
+            withExtension: resource.extension
+        )
+
+        guard let url else {
+            return nil
+        }
+
+        return NSImage(contentsOf: url)
     }
 }

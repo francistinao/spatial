@@ -7,6 +7,7 @@ enum MockData {
         sourceName: "Spotify",
         isPlaying: true,
         source: .spotify,
+        artworkURL: nil,
         artworkSystemName: "waveform.circle.fill"
     )
 }

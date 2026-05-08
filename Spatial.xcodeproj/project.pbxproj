@@ -54,6 +54,8 @@
 		A00000370000000000000000 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000370000000000000001 /* Assets.xcassets */; };
 		A00000F10000000000000000 /* Helvetica-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A00000F10000000000000001 /* Helvetica-Bold.ttf */; };
 		A00000F20000000000000000 /* Poppins-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A00000F20000000000000001 /* Poppins-Regular.ttf */; };
+		A00000F60000000000000000 /* spotify.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000F60000000000000001 /* spotify.png */; };
+		A00000F70000000000000000 /* apple-music.svg in Resources */ = {isa = PBXBuildFile; fileRef = A00000F70000000000000001 /* apple-music.svg */; };
 		A00000F40000000000000000 /* logo.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000F40000000000000001 /* logo.png */; };
 		A00000C10000000000000000 /* SpatialSpeaker.driver in Embed Drivers */ = {isa = PBXBuildFile; fileRef = B00000140000000000000000 /* SpatialSpeaker.driver */; };
 		B00000010000000000000000 /* SpatialSpeakerDriver.c in Sources */ = {isa = PBXBuildFile; fileRef = B00000110000000000000000 /* SpatialSpeakerDriver.c */; };
@@ -131,6 +133,8 @@
 		A00000370000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A00000F10000000000000001 /* Helvetica-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Helvetica-Bold.ttf"; sourceTree = "<group>"; };
 		A00000F20000000000000001 /* Poppins-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Poppins-Regular.ttf"; sourceTree = "<group>"; };
+		A00000F60000000000000001 /* spotify.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "spotify.png"; sourceTree = "<group>"; };
+		A00000F70000000000000001 /* apple-music.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "apple-music.svg"; sourceTree = "<group>"; };
 		A00000F40000000000000001 /* logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "logo.png"; sourceTree = "<group>"; };
 		A00000380000000000000001 /* Spatial.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Spatial.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B00000110000000000000000 /* SpatialSpeakerDriver.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SpatialSpeakerDriver.c; sourceTree = "<group>"; };
@@ -218,7 +222,9 @@
 		A00000F50000000000000001 /* Brand */ = {
 			isa = PBXGroup;
 			children = (
+				A00000F70000000000000001 /* apple-music.svg */,
 				A00000F40000000000000001 /* logo.png */,
+				A00000F60000000000000001 /* spotify.png */,
 			);
 			path = Brand;
 			sourceTree = "<group>";
@@ -492,6 +498,8 @@
 				A00000370000000000000000 /* Assets.xcassets in Resources */,
 				A00000F10000000000000000 /* Helvetica-Bold.ttf in Resources */,
 				A00000F20000000000000000 /* Poppins-Regular.ttf in Resources */,
+				A00000F60000000000000000 /* spotify.png in Resources */,
+				A00000F70000000000000000 /* apple-music.svg in Resources */,
 				A00000F40000000000000000 /* logo.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

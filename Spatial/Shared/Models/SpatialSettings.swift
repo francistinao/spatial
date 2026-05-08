@@ -69,8 +69,61 @@ struct SpatialSettings: Codable, Equatable {
     var width: Double
     var speed: Double
     var elevation: Double
+    var centerFocus: Double
+    var motionCurve: Double
     var theme: SpatialTheme = .violet
     var monitorOutputDeviceUID: String? = nil
 
     static let `default` = SpatialPreset.classic.settings
+
+    init(
+        rotation: Double,
+        depth: Double,
+        reverb: Double,
+        width: Double,
+        speed: Double,
+        elevation: Double,
+        centerFocus: Double = 0.60,
+        motionCurve: Double = 0.35,
+        theme: SpatialTheme = .violet,
+        monitorOutputDeviceUID: String? = nil
+    ) {
+        self.rotation = rotation
+        self.depth = depth
+        self.reverb = reverb
+        self.width = width
+        self.speed = speed
+        self.elevation = elevation
+        self.centerFocus = centerFocus
+        self.motionCurve = motionCurve
+        self.theme = theme
+        self.monitorOutputDeviceUID = monitorOutputDeviceUID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rotation
+        case depth
+        case reverb
+        case width
+        case speed
+        case elevation
+        case centerFocus
+        case motionCurve
+        case theme
+        case monitorOutputDeviceUID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rotation = try container.decode(Double.self, forKey: .rotation)
+        depth = try container.decode(Double.self, forKey: .depth)
+        reverb = try container.decode(Double.self, forKey: .reverb)
+        width = try container.decode(Double.self, forKey: .width)
+        speed = try container.decode(Double.self, forKey: .speed)
+        elevation = try container.decode(Double.self, forKey: .elevation)
+        centerFocus = try container.decodeIfPresent(Double.self, forKey: .centerFocus) ?? 0.60
+        motionCurve = try container.decodeIfPresent(Double.self, forKey: .motionCurve) ?? 0.35
+        theme = try container.decodeIfPresent(SpatialTheme.self, forKey: .theme) ?? .violet
+        monitorOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .monitorOutputDeviceUID)
+    }
 }

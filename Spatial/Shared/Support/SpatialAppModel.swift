@@ -317,6 +317,14 @@ final class SpatialAppModel: ObservableObject {
         updateSettings { $0.elevation = value }
     }
 
+    func updateCenterFocus(_ value: Double) {
+        updateSettings { $0.centerFocus = value }
+    }
+
+    func updateMotionCurve(_ value: Double) {
+        updateSettings { $0.motionCurve = value }
+    }
+
     func updateTheme(_ theme: SpatialTheme) {
         SpatialColor.setTheme(theme)
         updateSettings { $0.theme = theme }
@@ -441,7 +449,7 @@ final class SpatialAppModel: ObservableObject {
     }
 
     var canCollapseToNotch: Bool {
-        state.onboardingStatus == .completed && isSourceActive
+        state.onboardingStatus == .completed
     }
 
     var selectedSourceTitle: String {
@@ -498,6 +506,11 @@ final class SpatialAppModel: ObservableObject {
         }
 
         return nowPlaying.artworkSystemName ?? "waveform.circle.fill"
+    }
+
+    var displayArtworkURL: URL? {
+        guard !isDemoModeActive else { return nil }
+        return nowPlaying.artworkURL
     }
 
     var engineStatusText: String {
@@ -626,7 +639,7 @@ final class SpatialAppModel: ObservableObject {
     }
 
     var spatialTuningSummary: String {
-        "Orbit \(Int(settings.rotation * 100))  Depth \(Int(settings.depth * 100))  Space \(Int(settings.elevation * 100))"
+        "Orbit \(Int(settings.rotation * 100))  Space \(Int(settings.elevation * 100))  Focus \(Int(settings.centerFocus * 100))  Curve \(Int(settings.motionCurve * 100))"
     }
 
     var hasDryWetEchoRisk: Bool {

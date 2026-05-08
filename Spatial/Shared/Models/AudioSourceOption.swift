@@ -59,4 +59,15 @@ enum AudioSourceOption: String, CaseIterable, Identifiable {
             return "slider.horizontal.3"
         }
     }
+
+    var brandIconResource: (name: String, extension: String)? {
+        switch self {
+        case .spotify:
+            return ("spotify", "png")
+        case .appleMusic:
+            return ("apple-music", "svg")
+        case .systemAudio, .externalInput:
+            return nil
+        }
+    }
 }
