@@ -239,6 +239,71 @@ static Boolean SpatialSpeaker_IsStreamObject(AudioObjectID objectID)
     return objectID == kSpatialSpeakerInputStreamObjectID || objectID == kSpatialSpeakerOutputStreamObjectID;
 }
 
+static Boolean SpatialSpeaker_QualifierHasClass(UInt32 inQualifierDataSize, const void *inQualifierData, AudioClassID classID);
+
+static UInt32 SpatialSpeaker_DeviceOwnedObjectCount(UInt32 inQualifierDataSize, const void *inQualifierData)
+{
+    return SpatialSpeaker_QualifierHasClass(inQualifierDataSize, inQualifierData, kAudioStreamClassID) ? 2U : 0U;
+}
+
+static UInt32 SpatialSpeaker_PlugInOwnedObjectCount(UInt32 inQualifierDataSize, const void *inQualifierData)
+{
+    return SpatialSpeaker_QualifierHasClass(inQualifierDataSize, inQualifierData, kAudioDeviceClassID) ? 1U : 0U;
+}
+
+static UInt32 SpatialSpeaker_StreamObjectCountForScope(AudioObjectPropertyScope scope)
+{
+    switch (scope) {
+        case kAudioObjectPropertyScopeGlobal:
+            return 2U;
+        case kAudioObjectPropertyScopeInput:
+        case kAudioObjectPropertyScopeOutput:
+            return 1U;
+        default:
+            return 0U;
+    }
+}
+
+static UInt32 SpatialSpeaker_CopyPlugInOwnedObjects(UInt32 inQualifierDataSize, const void *inQualifierData, AudioObjectID *outData)
+{
+    UInt32 count = SpatialSpeaker_PlugInOwnedObjectCount(inQualifierDataSize, inQualifierData);
+    if (count == 1U && outData != NULL) {
+        outData[0] = kSpatialSpeakerDeviceObjectID;
+    }
+    return count;
+}
+
+static UInt32 SpatialSpeaker_CopyDeviceOwnedObjects(UInt32 inQualifierDataSize, const void *inQualifierData, AudioObjectID *outData)
+{
+    UInt32 count = SpatialSpeaker_DeviceOwnedObjectCount(inQualifierDataSize, inQualifierData);
+    if (count == 2U && outData != NULL) {
+        outData[0] = kSpatialSpeakerInputStreamObjectID;
+        outData[1] = kSpatialSpeakerOutputStreamObjectID;
+    }
+    return count;
+}
+
+static UInt32 SpatialSpeaker_CopyDeviceStreams(AudioObjectPropertyScope scope, AudioObjectID *outData)
+{
+    UInt32 count = 0;
+
+    if (scope == kAudioObjectPropertyScopeGlobal || scope == kAudioObjectPropertyScopeInput) {
+        if (outData != NULL) {
+            outData[count] = kSpatialSpeakerInputStreamObjectID;
+        }
+        ++count;
+    }
+
+    if (scope == kAudioObjectPropertyScopeGlobal || scope == kAudioObjectPropertyScopeOutput) {
+        if (outData != NULL) {
+            outData[count] = kSpatialSpeakerOutputStreamObjectID;
+        }
+        ++count;
+    }
+
+    return count;
+}
+
 static UInt64 SpatialSpeaker_HostTicksFromSeconds(Float64 seconds)
 {
     mach_timebase_info_data_t timebase;
@@ -552,8 +617,10 @@ static OSStatus SpatialSpeaker_GetPropertyDataSize(AudioServerPlugInDriverRef in
             switch (inAddress->mSelector) {
                 case kAudioObjectPropertyBaseClass:
                 case kAudioObjectPropertyClass:
-                case kAudioObjectPropertyOwner:
                     *outDataSize = sizeof(AudioClassID);
+                    return kAudioHardwareNoError;
+                case kAudioObjectPropertyOwner:
+                    *outDataSize = sizeof(AudioObjectID);
                     return kAudioHardwareNoError;
                 case kAudioObjectPropertyManufacturer:
                 case kAudioObjectPropertyName:
@@ -562,6 +629,8 @@ static OSStatus SpatialSpeaker_GetPropertyDataSize(AudioServerPlugInDriverRef in
                     *outDataSize = sizeof(CFStringRef);
                     return kAudioHardwareNoError;
                 case kAudioObjectPropertyOwnedObjects:
+                    *outDataSize = SpatialSpeaker_PlugInOwnedObjectCount(inQualifierDataSize, inQualifierData) * sizeof(AudioObjectID);
+                    return kAudioHardwareNoError;
                 case kAudioPlugInPropertyDeviceList:
                     *outDataSize = sizeof(AudioObjectID);
                     return kAudioHardwareNoError;
@@ -576,6 +645,8 @@ static OSStatus SpatialSpeaker_GetPropertyDataSize(AudioServerPlugInDriverRef in
             switch (inAddress->mSelector) {
                 case kAudioObjectPropertyBaseClass:
                 case kAudioObjectPropertyClass:
+                    *outDataSize = sizeof(AudioClassID);
+                    return kAudioHardwareNoError;
                 case kAudioObjectPropertyOwner:
                 case kAudioDevicePropertyTransportType:
                 case kAudioDevicePropertyClockDomain:
@@ -600,13 +671,13 @@ static OSStatus SpatialSpeaker_GetPropertyDataSize(AudioServerPlugInDriverRef in
                     *outDataSize = sizeof(CFStringRef);
                     return kAudioHardwareNoError;
                 case kAudioObjectPropertyOwnedObjects:
-                    *outDataSize = 2 * sizeof(AudioObjectID);
+                    *outDataSize = SpatialSpeaker_DeviceOwnedObjectCount(inQualifierDataSize, inQualifierData) * sizeof(AudioObjectID);
                     return kAudioHardwareNoError;
                 case kAudioDevicePropertyRelatedDevices:
                     *outDataSize = sizeof(AudioObjectID);
                     return kAudioHardwareNoError;
                 case kAudioDevicePropertyStreams:
-                    *outDataSize = (inAddress->mScope == kAudioObjectPropertyScopeGlobal) ? 2 * sizeof(AudioObjectID) : sizeof(AudioObjectID);
+                    *outDataSize = SpatialSpeaker_StreamObjectCountForScope(inAddress->mScope) * sizeof(AudioObjectID);
                     return kAudioHardwareNoError;
                 case kAudioObjectPropertyControlList:
                     *outDataSize = 0;
@@ -635,6 +706,8 @@ static OSStatus SpatialSpeaker_GetPropertyDataSize(AudioServerPlugInDriverRef in
             switch (inAddress->mSelector) {
                 case kAudioObjectPropertyBaseClass:
                 case kAudioObjectPropertyClass:
+                    *outDataSize = sizeof(AudioClassID);
+                    return kAudioHardwareNoError;
                 case kAudioObjectPropertyOwner:
                 case kAudioStreamPropertyIsActive:
                 case kAudioStreamPropertyDirection:
@@ -702,6 +775,13 @@ static OSStatus SpatialSpeaker_GetPropertyData(AudioServerPlugInDriverRef inDriv
                     *outDataSize = sizeof(CFStringRef);
                     return kAudioHardwareNoError;
                 case kAudioObjectPropertyOwnedObjects:
+                {
+                    UInt32 count = SpatialSpeaker_CopyPlugInOwnedObjects(inQualifierDataSize, inQualifierData, (AudioObjectID *)outData);
+                    UInt32 dataSize = count * sizeof(AudioObjectID);
+                    if (inDataSize < dataSize) return kAudioHardwareBadPropertySizeError;
+                    *outDataSize = dataSize;
+                    return kAudioHardwareNoError;
+                }
                 case kAudioPlugInPropertyDeviceList:
                     if (inDataSize < sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
                     *((AudioObjectID *)outData) = kSpatialSpeakerDeviceObjectID;
@@ -771,14 +851,13 @@ static OSStatus SpatialSpeaker_GetPropertyData(AudioServerPlugInDriverRef inDriv
                 case kAudioObjectPropertyOwnedObjects:
                 {
                     AudioObjectID owned[2];
-                    UInt32 count = 0;
-                    if (SpatialSpeaker_QualifierHasClass(inQualifierDataSize, inQualifierData, kAudioStreamClassID)) {
-                        owned[count++] = kSpatialSpeakerInputStreamObjectID;
-                        owned[count++] = kSpatialSpeakerOutputStreamObjectID;
+                    UInt32 count = SpatialSpeaker_CopyDeviceOwnedObjects(inQualifierDataSize, inQualifierData, owned);
+                    UInt32 dataSize = count * sizeof(AudioObjectID);
+                    if (inDataSize < dataSize) return kAudioHardwareBadPropertySizeError;
+                    if (dataSize > 0) {
+                        memcpy(outData, owned, dataSize);
                     }
-                    if (inDataSize < count * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
-                    memcpy(outData, owned, count * sizeof(AudioObjectID));
-                    *outDataSize = count * sizeof(AudioObjectID);
+                    *outDataSize = dataSize;
                     return kAudioHardwareNoError;
                 }
                 case kAudioDevicePropertyConfigurationApplication:
@@ -836,16 +915,13 @@ static OSStatus SpatialSpeaker_GetPropertyData(AudioServerPlugInDriverRef inDriv
                 case kAudioDevicePropertyStreams:
                 {
                     AudioObjectID streams[2];
-                    UInt32 count = 0;
-                    if (inAddress->mScope == kAudioObjectPropertyScopeGlobal || inAddress->mScope == kAudioObjectPropertyScopeInput) {
-                        streams[count++] = kSpatialSpeakerInputStreamObjectID;
+                    UInt32 count = SpatialSpeaker_CopyDeviceStreams(inAddress->mScope, streams);
+                    UInt32 dataSize = count * sizeof(AudioObjectID);
+                    if (inDataSize < dataSize) return kAudioHardwareBadPropertySizeError;
+                    if (dataSize > 0) {
+                        memcpy(outData, streams, dataSize);
                     }
-                    if (inAddress->mScope == kAudioObjectPropertyScopeGlobal || inAddress->mScope == kAudioObjectPropertyScopeOutput) {
-                        streams[count++] = kSpatialSpeakerOutputStreamObjectID;
-                    }
-                    if (inDataSize < count * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
-                    memcpy(outData, streams, count * sizeof(AudioObjectID));
-                    *outDataSize = count * sizeof(AudioObjectID);
+                    *outDataSize = dataSize;
                     return kAudioHardwareNoError;
                 }
                 case kAudioObjectPropertyControlList:

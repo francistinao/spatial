@@ -32,6 +32,15 @@ struct SpatialVirtualDeviceReadiness: Equatable {
     }
 }
 
+private struct HALDriverSignatureDiagnostics {
+    let signature: String?
+    let identifier: String?
+
+    var isAdHoc: Bool {
+        signature?.caseInsensitiveCompare("adhoc") == .orderedSame
+    }
+}
+
 final class AudioDeviceService {
     static let spatialVirtualDeviceUID = "com.spatial.app.driver.speaker"
     static let spatialVirtualDeviceName = "Spatial Speaker"
@@ -119,8 +128,7 @@ final class AudioDeviceService {
 
         guard let device = spatialVirtualDevice() else {
             let outputs = allOutputDevices().map { "\($0.name) [\($0.uid)]" }.joined(separator: ", ")
-            let issue = halDriverConflictMessage()
-                ?? "Spatial Speaker is not available in Core Audio yet. Restart Core Audio or reboot after installing the driver."
+            let issue = missingSpatialVirtualDeviceIssue()
             logReadinessFailureIfNeeded(
                 signature: "missing|\(isSpatialDriverInstalled)|\(outputs)|\(issue)",
                 message: "Spatial Speaker readiness failed: device not found. installedDriver=\(self.isSpatialDriverInstalled) outputs=\(outputs) issue=\(issue)"
@@ -215,6 +223,22 @@ final class AudioDeviceService {
         }.joined(separator: "; ")
 
         return "Conflicting HAL drivers were found in \(Self.spatialDriverInstallDirectory): \(details). Remove the duplicate driver, then restart Core Audio or reboot."
+    }
+
+    func missingSpatialVirtualDeviceIssue() -> String {
+        if let conflict = halDriverConflictMessage() {
+            return conflict
+        }
+
+        guard let installedDriverURL = installedSpatialDriverURL else {
+            return "Install Spatial Speaker to let Spatial route and capture system audio."
+        }
+
+        if let diagnostics = signatureDiagnostics(for: installedDriverURL), diagnostics.isAdHoc {
+            return "Spatial Speaker is installed, but the HAL bundle is still ad-hoc signed. macOS may refuse to publish ad-hoc audio drivers. Rebuild and reinstall it with a real Apple Development signing identity."
+        }
+
+        return "Spatial Speaker is installed, but macOS has not published a usable Core Audio device for it yet. Restart Core Audio or reboot. If it still does not appear, run Drivers/SpatialSpeaker/diagnose.sh and verify the driver signature and coreaudiod logs."
     }
 
     func setSystemOutputDevice(_ device: AudioOutputDevice) throws {
@@ -425,6 +449,42 @@ final class AudioDeviceService {
             .map { $0.lowercased() } ?? []
 
         return (bundleName: driverURL.lastPathComponent, factoryUUIDs: factoryUUIDs)
+    }
+
+    private func signatureDiagnostics(for driverURL: URL) -> HALDriverSignatureDiagnostics? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-dv", "--verbose=4", driverURL.path]
+
+        let pipe = Pipe()
+        process.standardError = pipe
+        process.standardOutput = Pipe()
+
+        do {
+            try process.run()
+        } catch {
+            logger.error("Failed to inspect driver signature for '\(driverURL.path, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        let signature = output
+            .split(separator: "\n")
+            .first { $0.hasPrefix("Signature=") }
+            .map { String($0.dropFirst("Signature=".count)) }
+
+        let identifier = output
+            .split(separator: "\n")
+            .first { $0.hasPrefix("Identifier=") }
+            .map { String($0.dropFirst("Identifier=".count)) }
+
+        return HALDriverSignatureDiagnostics(signature: signature, identifier: identifier)
     }
 }
 

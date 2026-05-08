@@ -907,14 +907,14 @@ final class SpatialAppModel: ObservableObject {
         }
 
         if isDriverBundleInstalledOnly {
-            return bundledDriverUnavailableMessage
+            return environment.audioDeviceService.missingSpatialVirtualDeviceIssue()
         }
 
         return "Install Spatial Speaker to let Spatial route and capture system audio."
     }
 
     private var bundledDriverUnavailableMessage: String {
-        "Spatial copied the driver bundle, but macOS still does not see a usable Spatial Speaker device yet. Restart Core Audio or reboot, then check for conflicting HAL installs if it still does not appear."
+        environment.audioDeviceService.missingSpatialVirtualDeviceIssue()
     }
 
     private func waitForDriverAvailability() async -> Bool {
@@ -944,7 +944,7 @@ final class SpatialAppModel: ObservableObject {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Spatial Speaker Not Available"
-        alert.informativeText = "Spatial copied the driver bundle, but macOS still does not see a usable Spatial Speaker output device yet. Restart Core Audio or reboot first. If it still does not appear, remove conflicting HAL driver installs and reinstall Spatial Speaker."
+        alert.informativeText = environment.audioDeviceService.missingSpatialVirtualDeviceIssue()
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Restart Anyway")
 
@@ -966,5 +966,40 @@ final class SpatialAppModel: ObservableObject {
         } catch {
             logger.error("Failed to request system restart: \(error.localizedDescription, privacy: .public)")
         }
+    }
+    
+    func checkProcessValidity<T>(_process: T) -> Bool {
+        return _process is Process
+    }
+    
+    private func repairSpatialAudioDevice() {
+        guard #available(macOS 10.15, *) else { return }
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e",
+            ""
+        ];
+    
+        /**
+         
+         for argument in ["repair"] {
+             process.arguments?.append("-e")
+             process.arguments?.append("tell application \"System Preferences\" to reveal anchor \"Audio\" of pane \"Sound\"")
+             
+             argument.endIndex == argument.startIndex ? (
+                 
+             )
+             : ()
+         
+         if checkProcessValidity(process) {
+                 // repair HAL spatial speaker device
+                 print("repair spatial audio device")
+         }
+         }
+         */
+        
+        
     }
 }
