@@ -31,8 +31,11 @@ struct SettingsView: View {
             .padding(.top, 20)
             .padding(.bottom, 18)
 
+            Spacer(minLength: 0)
+
             footer
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Color(hex: 0x1E1B1D))

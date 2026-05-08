@@ -58,7 +58,12 @@ fi
 echo
 
 echo "== Filtered coreaudiod/amfid Logs =="
-log show --last 5m --info --debug --predicate 'subsystem == "com.spatial.app.driver.speaker" OR process == "coreaudiod" OR process == "amfid"' --style compact | rg 'SpatialSpeaker|Spatial Speaker|com\.spatial\.app\.driver\.speaker|HostInterface_PropertiesChanged|Not loading the driver plug-in|adhoc signed|unknown certificate chain|F8BB1C28' || true
+LOG_PATTERN='SpatialSpeaker|Spatial Speaker|com\.spatial\.app\.driver\.speaker|HostInterface_PropertiesChanged|Not loading the driver plug-in|adhoc signed|unknown certificate chain|F8BB1C28|hidn|IsHidden'
+if command -v rg >/dev/null 2>&1; then
+  log show --last 5m --info --debug --predicate 'subsystem == "com.spatial.app.driver.speaker" OR process == "coreaudiod" OR process == "amfid"' --style compact | rg "$LOG_PATTERN" || true
+else
+  log show --last 5m --info --debug --predicate 'subsystem == "com.spatial.app.driver.speaker" OR process == "coreaudiod" OR process == "amfid"' --style compact | grep -E "$LOG_PATTERN" || true
+fi
 echo
 
 echo "== Audio Devices =="

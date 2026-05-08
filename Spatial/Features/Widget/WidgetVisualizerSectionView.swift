@@ -5,7 +5,7 @@ struct WidgetVisualizerSectionView: View {
 
     var body: some View {
         SectionCard(title: "Visualizer") {
-            VisualizerBarsView(activeIndex: 18)
+            VisualizerBarsView(bars: model.visualizerBars)
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {

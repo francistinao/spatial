@@ -74,6 +74,12 @@ final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
             return false
         }
 
+        guard deviceService.waitForSystemOutputDevice(uid: spatialSpeaker.uid) else {
+            logger.error("System output did not remain on Spatial Speaker after routing activation. expectedUID=\(spatialSpeaker.uid, privacy: .public)")
+            UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
+            return false
+        }
+
         isActive = true
         logger.info("Virtual routing active. System output routed to Spatial Speaker while Spatial monitors on '\(preferredMonitor?.name ?? current?.name ?? "unknown", privacy: .public)'.")
         return true

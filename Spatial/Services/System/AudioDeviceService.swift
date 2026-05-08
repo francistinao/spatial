@@ -273,6 +273,22 @@ final class AudioDeviceService {
         logger.info("System output device set to: \(device.name, privacy: .public) uid=\(device.uid, privacy: .public)")
     }
 
+    func systemOutputMatchesDeviceUID(_ uid: String) -> Bool {
+        systemOutputDevice()?.uid == uid
+    }
+
+    func waitForSystemOutputDevice(uid: String, timeout: TimeInterval = 1.5, pollInterval: TimeInterval = 0.05) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if systemOutputMatchesDeviceUID(uid) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: pollInterval)
+        } while Date() < deadline
+
+        return systemOutputMatchesDeviceUID(uid)
+    }
+
     private func outputDevice(for deviceID: AudioDeviceID) -> AudioOutputDevice? {
         guard hasOutputChannels(deviceID) else { return nil }
 
