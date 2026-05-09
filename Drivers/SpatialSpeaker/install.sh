@@ -56,16 +56,16 @@ if [[ -z "${SPATIAL_CODESIGN_IDENTITY:-}" && "${SOURCE_SIGNATURE:-}" == "adhoc" 
   exit 1
 fi
 
-sudo rm -rf "$DRIVER_DST"
-sudo cp -R "$DRIVER_SRC" "$DRIVER_DST"
-
 if [[ -n "${SPATIAL_CODESIGN_IDENTITY:-}" ]]; then
-  echo "Signing SpatialSpeaker HAL driver with identity: $SPATIAL_CODESIGN_IDENTITY"
-  sudo codesign --force --sign "$SPATIAL_CODESIGN_IDENTITY" --deep "$DRIVER_DST"
+  echo "Signing SpatialSpeaker HAL driver build product with identity: $SPATIAL_CODESIGN_IDENTITY"
+  codesign --force --sign "$SPATIAL_CODESIGN_IDENTITY" --deep "$DRIVER_SRC"
+  sudo rm -rf "$DRIVER_DST"
+  sudo cp -R "$DRIVER_SRC" "$DRIVER_DST"
 else
   echo "No SPATIAL_CODESIGN_IDENTITY configured; preserving the build product signature."
+  sudo rm -rf "$DRIVER_DST"
+  sudo cp -R "$DRIVER_SRC" "$DRIVER_DST"
 fi
-
 sudo launchctl stop com.apple.audio.coreaudiod || true
 sudo launchctl start com.apple.audio.coreaudiod
 

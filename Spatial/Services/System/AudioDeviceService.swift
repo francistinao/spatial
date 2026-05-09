@@ -542,12 +542,28 @@ final class BundledSpatialDriverInstaller: SpatialDriverInstalling {
     }
 
     private func bundledDriverURL() -> URL? {
+        let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+        let directCandidates: [URL] = [
+            // In local development, prefer the standalone driver target output so we do
+            // not reinstall a stale copy embedded in a previously built Spatial.app.
+            cwd.appendingPathComponent(".build-derived/Build/Products/Debug/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent(".build-derived/Build/Products/Release/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent(".deriveddata/Build/Products/Debug/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent(".deriveddata/Build/Products/Release/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent(".driver-build/Build/Products/Debug/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent("build/Debug/\(AudioDeviceService.spatialDriverBundleName)"),
+            cwd.appendingPathComponent("build/Release/\(AudioDeviceService.spatialDriverBundleName)")
+        ]
+
+        for candidate in directCandidates where fileManager.fileExists(atPath: candidate.path) {
+            logger.info("Using standalone driver bundle candidate: \(candidate.path, privacy: .public)")
+            return candidate
+        }
+
         let candidateRoots: [URL] = [
             Bundle.main.builtInPlugInsURL,
             Bundle.main.resourceURL,
-            Bundle.main.bundleURL.deletingLastPathComponent(),
-            URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent("build/Debug"),
-            URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent("build/Release")
+            Bundle.main.bundleURL.deletingLastPathComponent()
         ].compactMap { $0 }
 
         for root in candidateRoots where fileManager.fileExists(atPath: root.path) {
@@ -561,6 +577,7 @@ final class BundledSpatialDriverInstaller: SpatialDriverInstalling {
                 child.pathExtension == "driver"
                     && child.lastPathComponent == AudioDeviceService.spatialDriverBundleName
             }) {
+                logger.info("Using bundled driver bundle candidate: \(speakerDriver.path, privacy: .public)")
                 return speakerDriver
             }
         }

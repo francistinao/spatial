@@ -4,6 +4,7 @@ protocol AudioCaptureService: AnyObject {
     var captureState: AudioCaptureState { get }
     var onStateChange: ((AudioCaptureState) -> Void)? { get set }
     func prepare(for target: AudioCaptureTarget)
+    func setStartupSignalExpected(_ expected: Bool)
     func start()
     func stop()
 }

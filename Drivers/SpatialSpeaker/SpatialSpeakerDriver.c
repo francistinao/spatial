@@ -26,9 +26,11 @@ enum
     kSpatialSpeakerBufferFrameSize = 512,
     kSpatialSpeakerRingBufferFrames = 8192,
     kSpatialSpeakerZeroTimestampPeriod = 16384,
-    kSpatialSpeakerTrackedClientCapacity = 16,
+    kSpatialSpeakerTrackedClientCapacity = 32,
     kSpatialSpeakerTrackedBundleIDLength = 128
 };
+
+static const char *kSpatialSpeakerDiagnosticsBuildTag = "diag-2026-05-09-r6";
 
 typedef struct SpatialSpeakerTrackedClient
 {
@@ -412,6 +414,10 @@ static SpatialSpeakerTrackedClient *SpatialSpeaker_EnsureTrackedClient(const Aud
         }
     }
 
+    // All slots occupied — this client will NOT have isInputOnly set. Log so we know.
+    char bundleID[kSpatialSpeakerTrackedBundleIDLength];
+    SpatialSpeaker_CopyBundleID(inClientInfo->mBundleID, bundleID, sizeof(bundleID));
+    os_log_error(gSpatialSpeakerLog, "EnsureTrackedClient OVERFLOW: all %u slots occupied, clientID=%u bundleID=%{public}s will not be tracked (WriteMix NOT suppressed)", kSpatialSpeakerTrackedClientCapacity, inClientInfo->mClientID, bundleID);
     return NULL;
 }
 
@@ -548,7 +554,7 @@ static OSStatus SpatialSpeaker_Initialize(AudioServerPlugInDriverRef inDriver, A
     gSpatialSpeakerState.host = inHost;
     gSpatialSpeakerState.startHostTime = mach_absolute_time();
     gSpatialSpeakerState.startSampleTime = 0;
-    os_log_info(gSpatialSpeakerLog, "SpatialSpeaker_Initialize host=%p", inHost);
+    os_log_error(gSpatialSpeakerLog, "DIAG SpatialSpeaker_Initialize build=%{public}s host=%p", kSpatialSpeakerDiagnosticsBuildTag, inHost);
     return kAudioHardwareNoError;
 }
 
@@ -579,16 +585,15 @@ static OSStatus SpatialSpeaker_AddDeviceClient(AudioServerPlugInDriverRef inDriv
 
         pthread_mutex_lock(&gSpatialSpeakerState.mutex);
         SpatialSpeakerTrackedClient *client = SpatialSpeaker_EnsureTrackedClient(inClientInfo);
-        if (client != NULL && inClientInfo->mBundleID != NULL && CFEqual(inClientInfo->mBundleID, CFSTR("com.spatial.app"))) {
-            client->isInputOnly = 1;
-            isInputOnly = true;
+        if (client != NULL) {
+            client->isInputOnly = 0;
         }
         pthread_mutex_unlock(&gSpatialSpeakerState.mutex);
 
-        os_log_error(gSpatialSpeakerLog, "AddDeviceClient clientID=%u pid=%d bundleID=%{public}s role=%{public}s",
-            inClientInfo->mClientID, inClientInfo->mProcessID, bundleID, isInputOnly ? "capture-only" : "writer-candidate");
+        os_log_error(gSpatialSpeakerLog, "AddDeviceClient[%{public}s] clientID=%u pid=%d bundleID=%{public}s role=%{public}s",
+            kSpatialSpeakerDiagnosticsBuildTag, inClientInfo->mClientID, inClientInfo->mProcessID, bundleID, isInputOnly ? "capture-only" : "writer-candidate");
         if (isInputOnly) {
-            os_log_error(gSpatialSpeakerLog, "AddDeviceClient: marked clientID=%u as input-only (WriteMix suppressed)", inClientInfo->mClientID);
+            os_log_error(gSpatialSpeakerLog, "AddDeviceClient[%{public}s]: marked clientID=%u as input-only (WriteMix suppressed)", kSpatialSpeakerDiagnosticsBuildTag, inClientInfo->mClientID);
         }
     }
     return kAudioHardwareNoError;
@@ -1296,6 +1301,7 @@ static OSStatus SpatialSpeaker_StartIO(AudioServerPlugInDriverRef inDriver, Audi
     pthread_mutex_lock(&gSpatialSpeakerState.mutex);
     SpatialSpeakerTrackedClient *client = SpatialSpeaker_FindTrackedClient(inClientID);
     if (client != NULL) {
+        client->isInputOnly = 0;
         client->ioStartCount += 1;
         clientStartCount = client->ioStartCount;
         isInputOnly = client->isInputOnly != 0;
@@ -1303,7 +1309,7 @@ static OSStatus SpatialSpeaker_StartIO(AudioServerPlugInDriverRef inDriver, Audi
         bundleID[sizeof(bundleID) - 1] = '\0';
     }
     pthread_mutex_unlock(&gSpatialSpeakerState.mutex);
-    os_log_error(gSpatialSpeakerLog, "StartIO clientID=%u bundleID=%{public}s inputOnly=%{public}s clientStartCount=%u ioStartCount=%u->%u", inClientID, bundleID, isInputOnly ? "true" : "false", clientStartCount, previous, previous + 1);
+    os_log_error(gSpatialSpeakerLog, "StartIO[%{public}s] clientID=%u bundleID=%{public}s inputOnly=%{public}s clientStartCount=%u ioStartCount=%u->%u", kSpatialSpeakerDiagnosticsBuildTag, inClientID, bundleID, isInputOnly ? "true" : "false", clientStartCount, previous, previous + 1);
     if (previous == 0) {
         gSpatialSpeakerState.startHostTime = mach_absolute_time();
         gSpatialSpeakerState.startSampleTime = 0;
@@ -1388,28 +1394,22 @@ static OSStatus SpatialSpeaker_WillDoIOOperation(AudioServerPlugInDriverRef inDr
             {
                 static _Atomic(uint32_t) willDoCount = 0;
                 uint32_t n = atomic_fetch_add_explicit(&willDoCount, 1, memory_order_relaxed);
-                if (n < 16) {
+                if ((n % 96) == 0) {
                     os_log_error(gSpatialSpeakerLog, "WillDoIOOperation n=%u clientID=%u stream=%{public}s op=ReadInput willDo=true inputOnly=%{public}s", n, inClientID, "input", SpatialSpeaker_IsInputOnlyClient(inClientID) ? "true" : "false");
                 }
             }
             return kAudioHardwareNoError;
         case kAudioServerPlugInIOOperationWriteMix:
-            if (SpatialSpeaker_IsInputOnlyClient(inClientID)) {
-                static _Atomic(uint32_t) suppressedWriteMixCount = 0;
-                uint32_t n = atomic_fetch_add_explicit(&suppressedWriteMixCount, 1, memory_order_relaxed);
-                if (n < 16) {
-                    os_log_error(gSpatialSpeakerLog, "WillDoIOOperation n=%u clientID=%u stream=%{public}s op=WriteMix willDo=false (input-only client)", n, inClientID, "output");
-                }
-                *outWillDo = false;
-                *outWillDoInPlace = true;
-                return kAudioHardwareNoError;
-            }
+            // Always declare willDo=true so the HAL includes this IOProc in the full
+            // bidirectional IO cycle (WriteMix + ReadInput). For input-only clients,
+            // DoIOOperation WriteMix returns early without touching the ring buffer;
+            // the hasAudio guard in DoIOOperation already protects against silent output.
             *outWillDo = true;
             {
                 static _Atomic(uint32_t) willDoCount = 0;
                 uint32_t n = atomic_fetch_add_explicit(&willDoCount, 1, memory_order_relaxed);
                 if (n < 16) {
-                    os_log_error(gSpatialSpeakerLog, "WillDoIOOperation n=%u clientID=%u stream=%{public}s op=WriteMix willDo=true inputOnly=false", n, inClientID, "output");
+                    os_log_error(gSpatialSpeakerLog, "WillDoIOOperation n=%u clientID=%u stream=%{public}s op=WriteMix willDo=true inputOnly=%{public}s", n, inClientID, "output", SpatialSpeaker_IsInputOnlyClient(inClientID) ? "true" : "false");
                 }
             }
             return kAudioHardwareNoError;
@@ -1421,10 +1421,23 @@ static OSStatus SpatialSpeaker_WillDoIOOperation(AudioServerPlugInDriverRef inDr
 static OSStatus SpatialSpeaker_BeginIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID, UInt32 inOperationID, UInt32 inIOBufferFrameSize, const AudioServerPlugInIOCycleInfo *inIOCycleInfo)
 {
     (void)inDriver;
-    (void)inClientID;
-    (void)inOperationID;
-    (void)inIOBufferFrameSize;
     (void)inIOCycleInfo;
+    if (inDeviceObjectID == kSpatialSpeakerDeviceObjectID &&
+        (inOperationID == kAudioServerPlugInIOOperationReadInput || inOperationID == kAudioServerPlugInIOOperationWriteMix)) {
+        static _Atomic(uint32_t) beginIOCount = 0;
+        uint32_t n = atomic_fetch_add_explicit(&beginIOCount, 1, memory_order_relaxed);
+        if (n < 24) {
+            os_log_error(
+                gSpatialSpeakerLog,
+                "DIAG BeginIO n=%u clientID=%u op=%u frames=%u inputOnly=%{public}s",
+                n,
+                inClientID,
+                inOperationID,
+                inIOBufferFrameSize,
+                SpatialSpeaker_IsInputOnlyClient(inClientID) ? "true" : "false"
+            );
+        }
+    }
     return inDeviceObjectID == kSpatialSpeakerDeviceObjectID ? kAudioHardwareNoError : kAudioHardwareBadDeviceError;
 }
 
@@ -1438,7 +1451,35 @@ static OSStatus SpatialSpeaker_DoIOOperation(AudioServerPlugInDriverRef inDriver
         return kAudioHardwareBadDeviceError;
     }
     if (ioMainBuffer == NULL) {
+        os_log_error(
+            gSpatialSpeakerLog,
+            "DIAG DoIO rejected null main buffer clientID=%u op=%u streamObject=%u secondary=%p",
+            inClientID,
+            inOperationID,
+            inStreamObjectID,
+            ioSecondaryBuffer
+        );
         return kAudioHardwareIllegalOperationError;
+    }
+
+    if (inOperationID == kAudioServerPlugInIOOperationReadInput || inOperationID == kAudioServerPlugInIOOperationWriteMix) {
+        static _Atomic(uint32_t) doIOEntryCount = 0;
+        uint32_t n = atomic_fetch_add_explicit(&doIOEntryCount, 1, memory_order_relaxed);
+        if (n < 32) {
+            os_log_error(
+                gSpatialSpeakerLog,
+                "DIAG DoIO entry n=%u clientID=%u op=%u streamObject=%u stream=%{public}s frames=%u inputOnly=%{public}s main=%p secondary=%p",
+                n,
+                inClientID,
+                inOperationID,
+                inStreamObjectID,
+                SpatialSpeaker_StreamName(inStreamObjectID),
+                inIOBufferFrameSize,
+                SpatialSpeaker_IsInputOnlyClient(inClientID) ? "true" : "false",
+                ioMainBuffer,
+                ioSecondaryBuffer
+            );
+        }
     }
 
     if (inOperationID == kAudioServerPlugInIOOperationWriteMix && inStreamObjectID == kSpatialSpeakerOutputStreamObjectID) {
@@ -1496,7 +1537,7 @@ static OSStatus SpatialSpeaker_DoIOOperation(AudioServerPlugInDriverRef inDriver
         }
         pthread_mutex_unlock(&gSpatialSpeakerState.mutex);
 
-        if (n < 16 || (n % 96) == 0 || (hasAudio && !prevNonZero) || (!hasAudio && prevNonZero)) {
+        if (n < 32 || (n % 96) == 0 || (hasAudio && !prevNonZero) || (!hasAudio && prevNonZero)) {
             os_log_error(gSpatialSpeakerLog, "WriteMix n=%u clientID=%u bundleID=%{public}s stream=%{public}s frames=%u peak=%.6f", n, inClientID, bundleID, SpatialSpeaker_StreamName(inStreamObjectID), inIOBufferFrameSize, peak);
         }
         atomic_store_explicit(&lastLoggedNonZero, hasAudio ? 1u : 0u, memory_order_relaxed);
@@ -1520,16 +1561,37 @@ static OSStatus SpatialSpeaker_DoIOOperation(AudioServerPlugInDriverRef inDriver
     }
 
     if (inOperationID == kAudioServerPlugInIOOperationReadInput) {
+        // Use a global rolling counter — never capped — so logs appear every ~170 ms
+        // regardless of how many prior coreaudiod sessions have run.
         static _Atomic(uint32_t) readInputCount = 0;
         uint32_t n = atomic_fetch_add_explicit(&readInputCount, 1, memory_order_relaxed);
+        Boolean isInputOnly = SpatialSpeaker_IsInputOnlyClient(inClientID);
 
-        if (inStreamObjectID == kSpatialSpeakerInputStreamObjectID) {
-            SpatialSpeaker_CopyLatestInput(inIOBufferFrameSize, (Float32 *)ioMainBuffer);
+        // Some aggregate-device routes appear to invoke ReadInput with an unexpected
+        // stream object even though the device only exposes one loopback source. Treat
+        // ReadInput as a device-level fetch and always copy the latest ring-buffered
+        // mix instead of silently returning zeros on a stream-object mismatch.
+        if (inStreamObjectID != kSpatialSpeakerInputStreamObjectID) {
+            static _Atomic(uint32_t) unexpectedReadInputStreamCount = 0;
+            uint32_t mismatchCount = atomic_fetch_add_explicit(&unexpectedReadInputStreamCount, 1, memory_order_relaxed);
+            if (mismatchCount < 16) {
+                os_log_error(
+                    gSpatialSpeakerLog,
+                    "ReadInput stream mismatch n=%u clientID=%u inputOnly=%{public}s streamObject=%u stream=%{public}s -- copying latest loopback anyway",
+                    mismatchCount,
+                    inClientID,
+                    isInputOnly ? "true" : "false",
+                    inStreamObjectID,
+                    SpatialSpeaker_StreamName(inStreamObjectID)
+                );
+            }
         }
+        SpatialSpeaker_CopyLatestInput(inIOBufferFrameSize, (Float32 *)ioMainBuffer);
 
-        // Log first 16 cycles and every ~1s; also log on the first non-zero read.
+        // Log the first few calls verbosely, then every 16 calls (~170 ms at 512 frames/48 kHz),
+        // on first non-zero, and always on mismatch.
         static _Atomic(uint32_t) lastReadNonZero = 0;
-        if (n < 16 || (n % 96) == 0) {
+        if (n < 16 || (n % 16) == 0) {
             Float32 peak = 0;
             const Float32 *s = (const Float32 *)ioMainBuffer;
             for (UInt32 i = 0; i < inIOBufferFrameSize * kSpatialSpeakerChannelCount; i++) {
@@ -1544,16 +1606,19 @@ static OSStatus SpatialSpeaker_DoIOOperation(AudioServerPlugInDriverRef inDriver
             lastWriterClientID = gSpatialSpeakerState.lastWriterClientID;
             lastNonZeroPeak = gSpatialSpeakerState.lastNonZeroPeak;
             writeMixSequence = gSpatialSpeakerState.writeMixSequence;
+            UInt32 ringFrameCount = gSpatialSpeakerState.lastFrameCount;
             strncpy(lastWriterBundleID, gSpatialSpeakerState.lastWriterBundleID, sizeof(lastWriterBundleID) - 1);
             lastWriterBundleID[sizeof(lastWriterBundleID) - 1] = '\0';
             pthread_mutex_unlock(&gSpatialSpeakerState.mutex);
             uint32_t prevNonZero = atomic_load_explicit(&lastReadNonZero, memory_order_relaxed);
-            if (n < 16 || (n % 96) == 0 || (peak > 1e-6f && !prevNonZero)) {
-                os_log_error(gSpatialSpeakerLog, "ReadInput n=%u stream=%{public}s frames=%u peak=%.6f lastFrameCount=%u lastWriterClientID=%u lastWriterBundleID=%{public}s lastWriterPeak=%.6f writeMixSequence=%llu", n, SpatialSpeaker_StreamName(inStreamObjectID), inIOBufferFrameSize, peak, gSpatialSpeakerState.lastFrameCount, lastWriterClientID, lastWriterBundleID, lastNonZeroPeak, writeMixSequence);
+            if (n < 16 || (n % 16) == 0 || (peak > 1e-6f && !prevNonZero)) {
+                Float32 sample0 = inIOBufferFrameSize > 0 ? s[0] : 0;
+                Float32 sample1 = inIOBufferFrameSize > 0 ? s[1] : 0;
+                os_log_error(gSpatialSpeakerLog, "DIAG ReadInput n=%u clientID=%u inputOnly=%{public}s stream=%{public}s frames=%u peak=%.6f sample0=%.6f sample1=%.6f ringFrames=%u lastWriterClientID=%u lastWriterBundleID=%{public}s lastWriterPeak=%.6f writeMixSeq=%llu", n, inClientID, isInputOnly ? "true" : "false", SpatialSpeaker_StreamName(inStreamObjectID), inIOBufferFrameSize, peak, sample0, sample1, ringFrameCount, lastWriterClientID, lastWriterBundleID, lastNonZeroPeak, writeMixSequence);
             }
             atomic_store_explicit(&lastReadNonZero, peak > 1e-6f ? 1u : 0u, memory_order_relaxed);
-            if (gSpatialSpeakerState.lastFrameCount > 0 && peak <= 1e-6f && lastNonZeroPeak > 1e-6f) {
-                os_log_error(gSpatialSpeakerLog, "ReadInput mismatch: ringBuffer has frames=%u and lastWriterPeak=%.6f but read peak remained zero", gSpatialSpeakerState.lastFrameCount, lastNonZeroPeak);
+            if (ringFrameCount > 0 && peak <= 1e-6f && lastNonZeroPeak > 1e-6f) {
+                os_log_error(gSpatialSpeakerLog, "ReadInput mismatch: clientID=%u inputOnly=%{public}s ringFrames=%u lastWriterPeak=%.6f but read peak=0", inClientID, isInputOnly ? "true" : "false", ringFrameCount, lastNonZeroPeak);
             }
         }
         return kAudioHardwareNoError;

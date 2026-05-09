@@ -199,6 +199,7 @@ final class SpatialAppModel: ObservableObject {
         isWidgetManuallyExpanded = false
         logger.info("Selected audio source: \(source.rawValue, privacy: .public)")
         nowPlaying = environment.playbackMetadataService.currentNowPlaying(for: source)
+        synchronizeCaptureSignalExpectation()
         deactivateVirtualRouting()
         environment.audioCaptureService.stop()
         environment.dspEngine.stop()
@@ -233,6 +234,7 @@ final class SpatialAppModel: ObservableObject {
 
         environment.dspEngine.stop()
         environment.dspEngine.configure(with: settings)
+        synchronizeCaptureSignalExpectation()
 
         switch target {
         case .externalInput:
@@ -782,9 +784,15 @@ final class SpatialAppModel: ObservableObject {
         if updatedNowPlaying != nowPlaying {
             nowPlaying = updatedNowPlaying
         }
+        synchronizeCaptureSignalExpectation()
         logNowPlayingRefreshIfNeeded()
         synchronizeDemoPlayback()
         refreshWidgetDisplayMode()
+    }
+
+    private func synchronizeCaptureSignalExpectation() {
+        let expectedSignal = selectedAudioSource == nowPlaying.source && nowPlaying.isPlaying
+        environment.audioCaptureService.setStartupSignalExpected(expectedSignal)
     }
 
     private var screenCapturePermissionMessage: String {

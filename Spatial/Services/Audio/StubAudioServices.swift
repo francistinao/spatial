@@ -23,6 +23,10 @@ final class StubAudioCaptureService: AudioCaptureService {
         logger.info("Prepared capture target: \(String(describing: target), privacy: .public)")
     }
 
+    func setStartupSignalExpected(_ expected: Bool) {
+        logger.debug("Stub capture startup signal expectation updated. expected=\(expected, privacy: .public)")
+    }
+
     func start() {
         captureState = .capturing
         logger.info("Capture service started in stub mode")
@@ -275,6 +279,13 @@ private let liveCaptureInputCallback: AURenderCallback = { inRefCon, ioActionFla
 }
 
 final class LiveAudioCaptureService: NSObject, AudioCaptureService {
+    private struct LoopbackDecodedBuffer {
+        let pcmBuffer: AVAudioPCMBuffer
+        let frameCount: UInt32
+        let peak: Float
+        let layoutDescription: String
+    }
+
     private enum LoopbackBackend: String {
         case deviceIOProc
         case halInputUnit
@@ -298,10 +309,16 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     private var pendingFallbackDeviceName: String?
     private var isLoopbackFallbackPending = false
     private var hasConfirmedHealthySignal = false
+    private var startupSignalExpected = true
 
-    private let startupSilenceValidationCallbacks: UInt64 = 12
+    // 320 callbacks ≈ 3.4 s at 48 kHz / 512 frames. On this setup Spotify's first
+    // non-zero WriteMix can land a little over 2.1 s after routing flips to
+    // Spatial Speaker, so keep the IOProc path alive long enough to observe it.
+    private let startupSilenceValidationCallbacks: UInt64 = 320
     private let startupSilenceThreshold: Float = 1e-5
-    private let startupFailureValidationCallbacks: UInt64 = 24
+    // Give the HAL fallback a comparable grace window so we do not fail a route
+    // handoff while the source app is still reconnecting to the virtual device.
+    private let startupFailureValidationCallbacks: UInt64 = 240
 
     private(set) var captureState: AudioCaptureState = .idle {
         didSet {
@@ -320,6 +337,22 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         self.target = target
         captureState = .armed
         logger.info("Prepared live capture target: \(String(describing: target), privacy: .public)")
+    }
+
+    func setStartupSignalExpected(_ expected: Bool) {
+        captureQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.startupSignalExpected != expected else { return }
+
+            let previous = self.startupSignalExpected
+            self.startupSignalExpected = expected
+            self.logger.info("Updated live capture startup signal expectation. expected=\(expected, privacy: .public)")
+
+            guard expected, !previous, !self.hasConfirmedHealthySignal else { return }
+            self.loopbackCallbackCount = 0
+            self.lastLoopbackPeakBucket = nil
+            self.logger.info("Playback resumed while capture was armed — resetting startup silence validation window")
+        }
     }
 
     func start() {
@@ -374,6 +407,12 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
 
     private func handleCaptureStartTimeout(for target: AudioCaptureTarget, token: UUID) {
         guard token == startToken, captureState == .armed else { return }
+
+        guard startupSignalExpected else {
+            logger.info("Capture start timeout deferred because playback is not expected yet for target: \(String(describing: target), privacy: .public)")
+            scheduleCaptureStartTimeout(for: target, token: token)
+            return
+        }
 
         startToken = UUID()
         let message = stalledCaptureMessage(for: target)
@@ -476,73 +515,63 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
 
         var procID: AudioDeviceIOProcID?
         let createStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, captureQueue) {
-            [weak self] _, inInputData, _, _, _ in
+            [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else { return }
             let callbackCount = self.loopbackCallbackCount + 1
             self.loopbackCallbackCount = callbackCount
-            let audioBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
-            guard !audioBuffers.isEmpty else { return }
+            let inputBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
+            let outputBuffers = UnsafeMutableAudioBufferListPointer(outOutputData)
 
-            let frameCount: UInt32
-            if audioBuffers.count == 1 {
-                let buffer = audioBuffers[0]
-                guard buffer.mNumberChannels == 2,
-                      buffer.mDataByteSize % (2 * UInt32(MemoryLayout<Float32>.size)) == 0,
-                      buffer.mData != nil else {
-                    logger.error("Loopback callback received unsupported single-buffer layout. buffers=\(audioBuffers.count, privacy: .public) channels=\(audioBuffers[0].mNumberChannels, privacy: .public) bytes=\(audioBuffers[0].mDataByteSize, privacy: .public)")
-                    return
-                }
-                frameCount = buffer.mDataByteSize / (2 * UInt32(MemoryLayout<Float32>.size))
-            } else if audioBuffers.count >= 2 {
-                let left = audioBuffers[0]
-                let right = audioBuffers[1]
-                guard left.mNumberChannels == 1,
-                      right.mNumberChannels == 1,
-                      left.mDataByteSize == right.mDataByteSize,
-                      left.mDataByteSize % UInt32(MemoryLayout<Float32>.size) == 0,
-                      left.mData != nil,
-                      right.mData != nil else {
-                    logger.error("Loopback callback received unsupported multi-buffer layout. buffers=\(audioBuffers.count, privacy: .public) leftChannels=\(audioBuffers[0].mNumberChannels, privacy: .public) rightChannels=\(audioBuffers[1].mNumberChannels, privacy: .public)")
-                    return
-                }
-                frameCount = left.mDataByteSize / UInt32(MemoryLayout<Float32>.size)
+            let inputDecoded = self.decodeLoopbackBufferList(inputBuffers, format: captureFormat)
+            let outputDecoded = self.decodeLoopbackBufferList(outputBuffers, format: captureFormat)
+
+            if callbackCount <= 8 {
+                let inputPeak = inputDecoded?.peak ?? -1
+                let outputPeak = outputDecoded?.peak ?? -1
+                logger.debug(
+                    "DIAG IOProc callback n=\(callbackCount, privacy: .public) input={\(self.audioBufferListSummary(inputBuffers), privacy: .public)} output={\(self.audioBufferListSummary(outputBuffers), privacy: .public)} inputPeak=\(inputPeak, format: .fixed(precision: 4)) outputPeak=\(outputPeak, format: .fixed(precision: 4))"
+                )
+            }
+
+            let selectedBuffer: LoopbackDecodedBuffer?
+            if let inputDecoded, let outputDecoded {
+                selectedBuffer = outputDecoded.peak > inputDecoded.peak ? outputDecoded : inputDecoded
             } else {
+                selectedBuffer = inputDecoded ?? outputDecoded
+            }
+
+            guard let selectedBuffer else {
+                logger.error(
+                    "Loopback callback could not decode either buffer list. input={\(self.audioBufferListSummary(inputBuffers), privacy: .public)} output={\(self.audioBufferListSummary(outputBuffers), privacy: .public)}"
+                )
+                UnsafeMutableAudioBufferListPointer(outOutputData).forEach { buf in
+                    if let data = buf.mData { memset(data, 0, Int(buf.mDataByteSize)) }
+                }
                 return
             }
 
-            guard frameCount > 0 else { return }
+            if callbackCount <= 8 {
+                logger.debug(
+                    "DIAG IOProc selected source n=\(callbackCount, privacy: .public) peak=\(selectedBuffer.peak, format: .fixed(precision: 4)) frames=\(selectedBuffer.frameCount, privacy: .public) layout=\(selectedBuffer.layoutDescription, privacy: .public)"
+                )
+            }
 
-            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: frameCount) else { return }
-            pcmBuffer.frameLength = frameCount
-
-            if let dst = pcmBuffer.floatChannelData {
-                if audioBuffers.count == 1,
-                   let rawData = audioBuffers[0].mData {
-                    let src = rawData.assumingMemoryBound(to: Float32.self)
-                    for i in 0..<Int(frameCount) {
-                        dst[0][i] = src[i * 2]
-                        dst[1][i] = src[i * 2 + 1]
-                    }
-                } else if audioBuffers.count >= 2,
-                          let leftData = audioBuffers[0].mData,
-                          let rightData = audioBuffers[1].mData {
-                    let left = leftData.assumingMemoryBound(to: Float32.self)
-                    let right = rightData.assumingMemoryBound(to: Float32.self)
-                    dst[0].update(from: left, count: Int(frameCount))
-                    dst[1].update(from: right, count: Int(frameCount))
-                }
+            // Zero-fill the output side after inspection so our capture client never
+            // feeds synthetic audio back into the driver's write path.
+            UnsafeMutableAudioBufferListPointer(outOutputData).forEach { buf in
+                if let data = buf.mData { memset(data, 0, Int(buf.mDataByteSize)) }
             }
 
             self.processLoopbackBuffer(
-                pcmBuffer,
+                selectedBuffer.pcmBuffer,
                 backend: .deviceIOProc,
                 deviceID: deviceID,
                 deviceName: name,
                 callbackCount: callbackCount,
-                bufferCount: audioBuffers.count,
-                frameCount: frameCount
+                bufferCount: max(inputBuffers.count, outputBuffers.count),
+                frameCount: selectedBuffer.frameCount
             )
-            pipeline.deliver(pcmBuffer)
+            pipeline.deliver(selectedBuffer.pcmBuffer)
         }
 
         guard createStatus == noErr, let procID else {
@@ -655,7 +684,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         let inputStreams = try streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeInput)
         let outputStreams = try streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeOutput)
         let inputMask = String(repeating: "1", count: inputStreams.count)
-        let outputMask = String(repeating: "0", count: outputStreams.count)
+        let outputMask = String(repeating: "1", count: outputStreams.count)
 
         guard !inputStreams.isEmpty, !outputStreams.isEmpty else {
             logger.error("Loopback stream usage resolution failed. inputStreams=\(inputStreams.count, privacy: .public) outputStreams=\(outputStreams.count, privacy: .public)")
@@ -665,7 +694,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         }
 
         try setIOProcStreamUsage(deviceID: deviceID, procID: procID, isInput: true, enabledStreamCount: inputStreams.count, streamMaskValue: 1)
-        try setIOProcStreamUsage(deviceID: deviceID, procID: procID, isInput: false, enabledStreamCount: outputStreams.count, streamMaskValue: 0)
+        try setIOProcStreamUsage(deviceID: deviceID, procID: procID, isInput: false, enabledStreamCount: outputStreams.count, streamMaskValue: 1)
 
         logger.info(
             "Configured IOProc stream usage for Spatial Speaker. inputStreams=\(inputStreams.count, privacy: .public) outputStreams=\(outputStreams.count, privacy: .public) inputMask=\(inputMask, privacy: .public) outputMask=\(outputMask, privacy: .public)"
@@ -825,6 +854,29 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             return
         }
 
+        guard startupSignalExpected else {
+            if callbackCount == 1 || callbackCount % 256 == 0 {
+                logger.info("Loopback capture is armed and silent because playback is not expected yet. backend=\(backend.rawValue, privacy: .public) callbacks=\(callbackCount, privacy: .public)")
+            }
+            return
+        }
+
+        if backend == .halInputUnit,
+           callbackCount >= startupFailureValidationCallbacks,
+           peak <= startupSilenceThreshold,
+           !hasConfirmedHealthySignal {
+            let outputStillSpatial = deviceService.systemOutputMatchesDeviceUID(AudioDeviceService.spatialVirtualDeviceUID)
+            let message = outputStillSpatial
+                ? "System output is set to Spatial Speaker, but no external audio client is writing into it."
+                : "System output left Spatial Speaker before live capture received any audio."
+            logger.error("\(message, privacy: .public)")
+            startToken = UUID()
+            stopCurrentCapture(updatingState: false)
+            captureState = .failed(message)
+            pipeline.notifyCaptureError(message)
+            return
+        }
+
         guard backend == .deviceIOProc,
               callbackCount >= startupSilenceValidationCallbacks,
               peak <= startupSilenceThreshold,
@@ -865,21 +917,87 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
                 self.pipeline.notifyCaptureError(message)
             }
         }
+    }
 
-        if backend == .halInputUnit,
-           callbackCount >= startupFailureValidationCallbacks,
-           peak <= startupSilenceThreshold,
-           !hasConfirmedHealthySignal {
-            let outputStillSpatial = deviceService.systemOutputMatchesDeviceUID(AudioDeviceService.spatialVirtualDeviceUID)
-            let message = outputStillSpatial
-                ? "System output is set to Spatial Speaker, but no external audio client is writing into it."
-                : "System output left Spatial Speaker before live capture received any audio."
-            logger.error("\(message, privacy: .public)")
-            startToken = UUID()
-            stopCurrentCapture(updatingState: false)
-            captureState = .failed(message)
-            pipeline.notifyCaptureError(message)
+    private func audioBufferListSummary(_ audioBuffers: UnsafeMutableAudioBufferListPointer) -> String {
+        guard !audioBuffers.isEmpty else { return "count=0" }
+        let parts = audioBuffers.enumerated().map { index, buffer in
+            let state = buffer.mData == nil ? "nil" : "valid"
+            return "#\(index):ch=\(buffer.mNumberChannels),bytes=\(buffer.mDataByteSize),data=\(state)"
         }
+        return "count=\(audioBuffers.count) " + parts.joined(separator: " ")
+    }
+
+    private func decodeLoopbackBufferList(
+        _ audioBuffers: UnsafeMutableAudioBufferListPointer,
+        format: AVAudioFormat
+    ) -> LoopbackDecodedBuffer? {
+        guard !audioBuffers.isEmpty else { return nil }
+
+        let frameCount: UInt32
+        let layoutDescription: String
+        if audioBuffers.count == 1 {
+            let buffer = audioBuffers[0]
+            guard buffer.mNumberChannels == 2,
+                  buffer.mDataByteSize % (2 * UInt32(MemoryLayout<Float32>.size)) == 0,
+                  buffer.mData != nil else {
+                return nil
+            }
+            frameCount = buffer.mDataByteSize / (2 * UInt32(MemoryLayout<Float32>.size))
+            layoutDescription = "single-interleaved"
+        } else {
+            let left = audioBuffers[0]
+            let right = audioBuffers[1]
+            guard left.mNumberChannels == 1,
+                  right.mNumberChannels == 1,
+                  left.mDataByteSize == right.mDataByteSize,
+                  left.mDataByteSize % UInt32(MemoryLayout<Float32>.size) == 0,
+                  left.mData != nil,
+                  right.mData != nil else {
+                return nil
+            }
+            frameCount = left.mDataByteSize / UInt32(MemoryLayout<Float32>.size)
+            layoutDescription = "dual-mono"
+        }
+
+        guard frameCount > 0,
+              let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            return nil
+        }
+
+        pcmBuffer.frameLength = frameCount
+        var peak: Float = 0
+        if let dst = pcmBuffer.floatChannelData {
+            if audioBuffers.count == 1,
+               let rawData = audioBuffers[0].mData {
+                let src = rawData.assumingMemoryBound(to: Float32.self)
+                for i in 0..<Int(frameCount) {
+                    let left = src[i * 2]
+                    let right = src[i * 2 + 1]
+                    dst[0][i] = left
+                    dst[1][i] = right
+                    peak = max(peak, abs(left), abs(right))
+                }
+            } else if let leftData = audioBuffers[0].mData,
+                      let rightData = audioBuffers[1].mData {
+                let left = leftData.assumingMemoryBound(to: Float32.self)
+                let right = rightData.assumingMemoryBound(to: Float32.self)
+                for i in 0..<Int(frameCount) {
+                    let leftSample = left[i]
+                    let rightSample = right[i]
+                    dst[0][i] = leftSample
+                    dst[1][i] = rightSample
+                    peak = max(peak, abs(leftSample), abs(rightSample))
+                }
+            }
+        }
+
+        return LoopbackDecodedBuffer(
+            pcmBuffer: pcmBuffer,
+            frameCount: frameCount,
+            peak: peak,
+            layoutDescription: layoutDescription
+        )
     }
 
     private func confirmHealthySignalIfNeeded(deviceID: AudioDeviceID, deviceName: String, backend: LoopbackBackend, peak: Float) {

@@ -60,22 +60,22 @@ final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
             logger.info("Falling back to current output device for monitor path: \(current.name, privacy: .public)")
         }
 
-        guard !currentIsSpatial else {
-            logger.info("System output is already Spatial Speaker — skipping switch")
-            isActive = true
-            return true
+        if currentIsSpatial {
+            guard let preferredMonitor else {
+                logger.error("System output is already Spatial Speaker, but no real monitor device is available for a routing reset")
+                UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
+                return false
+            }
+
+            logger.warning("System output already points at Spatial Speaker before activation — forcing a routing reset via '\(preferredMonitor.name, privacy: .public)'")
+
+            guard switchSystemOutput(to: preferredMonitor, failureMessage: "Could not switch system output away from Spatial Speaker during routing reset") else {
+                UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
+                return false
+            }
         }
 
-        do {
-            try deviceService.setSystemOutputDevice(spatialSpeaker)
-        } catch {
-            logger.error("Could not switch system output to Spatial Speaker: \(error.localizedDescription, privacy: .public)")
-            UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
-            return false
-        }
-
-        guard deviceService.waitForSystemOutputDevice(uid: spatialSpeaker.uid) else {
-            logger.error("System output did not remain on Spatial Speaker after routing activation. expectedUID=\(spatialSpeaker.uid, privacy: .public)")
+        guard switchSystemOutput(to: spatialSpeaker, failureMessage: "Could not switch system output to Spatial Speaker") else {
             UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
             return false
         }
@@ -112,6 +112,22 @@ final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
         } catch {
             logger.error("Failed to restore system output: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func switchSystemOutput(to device: AudioOutputDevice, failureMessage: String) -> Bool {
+        do {
+            try deviceService.setSystemOutputDevice(device)
+        } catch {
+            logger.error("\(failureMessage, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+
+        guard deviceService.waitForSystemOutputDevice(uid: device.uid) else {
+            logger.error("System output did not remain on expected device after switch. expectedUID=\(device.uid, privacy: .public) device=\(device.name, privacy: .public)")
+            return false
+        }
+
+        return true
     }
 
     private func resolveMonitorDevice(
