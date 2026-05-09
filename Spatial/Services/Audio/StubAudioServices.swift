@@ -7,6 +7,63 @@ import Foundation
 import OSLog
 import ScreenCaptureKit
 
+// #region agent log
+/// Tiny NDJSON debug-mode logger for the workspace's session log file.
+/// Used during the "HAL callbacks fire but every peak is 0.0000" debug session
+/// (debug session id c5768c). Inlined here rather than in a separate file so it
+/// does not require Xcode project surgery; remove together with all other
+/// `// #region agent log` blocks once verification is complete.
+private enum SpatialDebugLog {
+    private static let logPath = "/Users/garuda/dev/spatial/.cursor/debug-c5768c.log"
+    private static let sessionId = "c5768c"
+    private static let queue = DispatchQueue(label: "com.spatial.app.debug-log", qos: .utility)
+
+    static func log(hypothesisId: String, location: String, message: String, data: [String: Any] = [:]) {
+        let timestamp = Date().timeIntervalSince1970 * 1000
+        var payload: [String: Any] = [
+            "sessionId": sessionId,
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": timestamp,
+        ]
+        payload["id"] = "log_\(Int(timestamp))_\(UUID().uuidString.prefix(8))"
+
+        queue.async {
+            let directory = (logPath as NSString).deletingLastPathComponent
+            guard FileManager.default.fileExists(atPath: directory) else { return }
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+            var line = jsonData
+            line.append(0x0A)
+
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logPath)) {
+                    defer { try? handle.close() }
+                    do {
+                        try handle.seekToEnd()
+                        try handle.write(contentsOf: line)
+                    } catch {}
+                }
+            } else {
+                try? line.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
+    }
+
+    static func authName(_ status: AVAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .authorized: return "authorized"
+        @unknown default: return "unknown(\(status.rawValue))"
+        }
+    }
+}
+// #endregion
+
 final class StubAudioCaptureService: AudioCaptureService {
     private let logger = Logger(subsystem: "com.spatial.app", category: "AudioCapture")
     private(set) var captureState: AudioCaptureState = .idle {
@@ -286,9 +343,27 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         let layoutDescription: String
     }
 
+    private struct CaptureStreamConfiguration {
+        let streamID: AudioObjectID
+        let deviceFormat: AVAudioFormat
+        let processingFormat: AVAudioFormat
+        let streamDescription: AudioStreamBasicDescription
+
+        var isInterleaved: Bool { deviceFormat.isInterleaved }
+        var channelCount: Int { Int(deviceFormat.channelCount) }
+    }
+
     private enum LoopbackBackend: String {
         case deviceIOProc
         case halInputUnit
+    }
+
+    private enum CaptureAttemptProgress: String {
+        case armed
+        case startedInHAL
+        case driverInputStarted
+        case driverReadInputObserved
+        case healthySignalConfirmed
     }
 
     private let logger = Logger(subsystem: "com.spatial.app", category: "LiveAudioCapture")
@@ -300,7 +375,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     private var halInputAudioUnit: AudioUnit?
     private var screenCaptureSession: SystemAudioScreenCaptureSession?
     private var activeDeviceID: AudioDeviceID?
-    private var captureFormat: AVAudioFormat?
+    private var captureConfiguration: CaptureStreamConfiguration?
     private var startToken = UUID()
     private var loopbackCallbackCount: UInt64 = 0
     private var lastLoopbackPeakBucket: Int?
@@ -310,6 +385,10 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     private var isLoopbackFallbackPending = false
     private var hasConfirmedHealthySignal = false
     private var startupSignalExpected = true
+    private let preferredLoopbackBackend: LoopbackBackend = .halInputUnit
+    private var captureAttemptSerial: UInt64 = 0
+    private var activeCaptureAttemptSerial: UInt64 = 0
+    private var captureAttemptProgress: CaptureAttemptProgress = .armed
 
     // 320 callbacks ≈ 3.4 s at 48 kHz / 512 frames. On this setup Spotify's first
     // non-zero WriteMix can land a little over 2.1 s after routing flips to
@@ -336,6 +415,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     func prepare(for target: AudioCaptureTarget) {
         self.target = target
         captureState = .armed
+        captureAttemptProgress = .armed
         logger.info("Prepared live capture target: \(String(describing: target), privacy: .public)")
     }
 
@@ -362,9 +442,12 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             return
         }
 
+        captureAttemptSerial += 1
+        activeCaptureAttemptSerial = captureAttemptSerial
+        captureAttemptProgress = .armed
         let token = UUID()
         startToken = token
-        logger.info("Requested live capture start for target: \(String(describing: target), privacy: .public)")
+        logger.info("Requested live capture start for target: \(String(describing: target), privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) preferredBackend=\(self.preferredLoopbackBackend.rawValue, privacy: .public)")
         scheduleCaptureStartTimeout(for: target, token: token)
 
         captureQueue.async { [weak self] in
@@ -383,13 +466,13 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     }
 
     private func startCapture(for target: AudioCaptureTarget, token: UUID) {
-        logger.debug("Beginning live capture setup for target: \(String(describing: target), privacy: .public)")
+        logger.debug("Beginning live capture setup for target: \(String(describing: target), privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public)")
         stopCurrentCapture(updatingState: false)
 
         do {
             try beginDeviceCapture(for: target)
             guard token == startToken else { return }
-            logger.info("Live capture armed for target: \(String(describing: target), privacy: .public) — waiting for healthy signal")
+            logger.info("Live capture armed for target: \(String(describing: target), privacy: .public) — waiting for healthy signal. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) backend=\(self.activeLoopbackBackend?.rawValue ?? "none", privacy: .public)")
         } catch {
             guard token == startToken else { return }
             let message = userFacingCaptureError(error, target: target)
@@ -445,13 +528,14 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
 
         self.activeLoopbackBackend = nil
         self.activeDeviceID = nil
-        self.captureFormat = nil
+        self.captureConfiguration = nil
         self.loopbackCallbackCount = 0
         self.lastLoopbackPeakBucket = nil
         self.pendingFallbackDeviceID = nil
         self.pendingFallbackDeviceName = nil
         self.isLoopbackFallbackPending = false
         self.hasConfirmedHealthySignal = false
+        self.captureAttemptProgress = .armed
 
         if updatingState {
             captureState = .idle
@@ -500,20 +584,34 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     }
 
     private func startLoopbackCapture(on deviceID: AudioDeviceID, name: String) throws {
-        do {
-            try startLoopbackCaptureWithIOProc(on: deviceID, name: name)
-        } catch {
-            logger.error("IOProc loopback capture setup failed; falling back to HAL input unit. error=\(error.localizedDescription, privacy: .public)")
-            try startLoopbackCaptureWithHALInputUnit(on: deviceID, name: name)
+        logSpatialDeviceTopology(for: deviceID, name: name)
+        switch preferredLoopbackBackend {
+        case .halInputUnit:
+            do {
+                logger.info("Attempting primary loopback backend=\(LoopbackBackend.halInputUnit.rawValue, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public) name=\(name, privacy: .public)")
+                try startLoopbackCaptureWithHALInputUnit(on: deviceID, name: name)
+            } catch {
+                logger.error("HAL input-unit loopback capture setup failed; falling back to IOProc. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                try startLoopbackCaptureWithIOProc(on: deviceID, name: name)
+            }
+        case .deviceIOProc:
+            do {
+                logger.info("Attempting primary loopback backend=\(LoopbackBackend.deviceIOProc.rawValue, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public) name=\(name, privacy: .public)")
+                try startLoopbackCaptureWithIOProc(on: deviceID, name: name)
+            } catch {
+                logger.error("IOProc loopback capture setup failed; falling back to HAL input unit. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                try startLoopbackCaptureWithHALInputUnit(on: deviceID, name: name)
+            }
         }
     }
 
     private func startLoopbackCaptureWithIOProc(on deviceID: AudioDeviceID, name: String) throws {
-        let captureFormat = try makeCaptureStreamFormat(for: deviceID)
+        let captureConfiguration = try makeCaptureStreamConfiguration(for: deviceID)
         let pipeline = self.pipeline
         let logger = self.logger
 
         var procID: AudioDeviceIOProcID?
+        logger.info("Creating IOProc loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
         let createStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, captureQueue) {
             [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else { return }
@@ -522,14 +620,14 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             let inputBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
             let outputBuffers = UnsafeMutableAudioBufferListPointer(outOutputData)
 
-            let inputDecoded = self.decodeLoopbackBufferList(inputBuffers, format: captureFormat)
-            let outputDecoded = self.decodeLoopbackBufferList(outputBuffers, format: captureFormat)
+            let inputDecoded = self.decodeLoopbackBufferList(inputBuffers, format: captureConfiguration.processingFormat)
+            let outputDecoded = self.decodeLoopbackBufferList(outputBuffers, format: captureConfiguration.processingFormat)
 
             if callbackCount <= 8 {
                 let inputPeak = inputDecoded?.peak ?? -1
                 let outputPeak = outputDecoded?.peak ?? -1
                 logger.debug(
-                    "DIAG IOProc callback n=\(callbackCount, privacy: .public) input={\(self.audioBufferListSummary(inputBuffers), privacy: .public)} output={\(self.audioBufferListSummary(outputBuffers), privacy: .public)} inputPeak=\(inputPeak, format: .fixed(precision: 4)) outputPeak=\(outputPeak, format: .fixed(precision: 4))"
+                    "DIAG IOProc callback n=\(callbackCount, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) preferredBackend=\(self.preferredLoopbackBackend.rawValue, privacy: .public) expectedLoopbackSource=input input={\(self.audioBufferListSummary(inputBuffers), privacy: .public)} output={\(self.audioBufferListSummary(outputBuffers), privacy: .public)} inputPeak=\(inputPeak, format: .fixed(precision: 4)) outputPeak=\(outputPeak, format: .fixed(precision: 4))"
                 )
             }
 
@@ -580,8 +678,11 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             ])
         }
 
+        logger.info("Created IOProc loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
+
         try configureIOProcStreamUsage(deviceID: deviceID, procID: procID)
 
+        logger.info("Starting IOProc loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
         let startStatus = AudioDeviceStart(deviceID, procID)
         guard startStatus == noErr else {
             AudioDeviceDestroyIOProcID(deviceID, procID)
@@ -592,15 +693,45 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
 
         self.ioProcID = procID
         self.activeDeviceID = deviceID
-        self.captureFormat = captureFormat
+        self.captureConfiguration = captureConfiguration
         self.activeLoopbackBackend = .deviceIOProc
         self.pendingFallbackDeviceID = deviceID
         self.pendingFallbackDeviceName = name
+        self.captureAttemptProgress = .driverInputStarted
         logger.info("Loopback capture armed on device '\(name, privacy: .public)' id=\(deviceID) backend=\(LoopbackBackend.deviceIOProc.rawValue, privacy: .public)")
     }
 
     private func startLoopbackCaptureWithHALInputUnit(on deviceID: AudioDeviceID, name: String) throws {
-        let captureFormat = try makeCaptureStreamFormat(for: deviceID)
+        // #region agent log
+        // The Spatial Speaker driver advertises an input stream with terminal type
+        // kAudioStreamTerminalTypeMicrophone. macOS TCC therefore gates capture behind
+        // the kTCCServiceMicrophone permission. Without NSMicrophoneUsageDescription
+        // declared in Info.plist, TCC silently denies (auth_value=0) and AUHAL DISABLES
+        // the input stream — which is the exact symptom of "HAL callbacks fire but
+        // every peak is 0.0000". See debug-c5768c.log for runtime evidence.
+        let priorMicAuth = AVCaptureDevice.authorizationStatus(for: .audio)
+        SpatialDebugLog.log(hypothesisId: "H1", location: "StubAudioServices.swift:startLoopbackCaptureWithHALInputUnit", message: "before requestAccess(.audio)", data: ["priorAuth": priorMicAuth.rawValue, "priorAuthName": SpatialDebugLog.authName(priorMicAuth), "deviceID": Int(deviceID)])
+        if priorMicAuth == .notDetermined {
+            let semaphore = DispatchSemaphore(value: 0)
+            var grantedFlag = false
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                grantedFlag = granted
+                semaphore.signal()
+            }
+            semaphore.wait()
+            SpatialDebugLog.log(hypothesisId: "H1", location: "StubAudioServices.swift:startLoopbackCaptureWithHALInputUnit", message: "requestAccess(.audio) returned", data: ["granted": grantedFlag])
+        }
+        let postMicAuth = AVCaptureDevice.authorizationStatus(for: .audio)
+        SpatialDebugLog.log(hypothesisId: "H1", location: "StubAudioServices.swift:startLoopbackCaptureWithHALInputUnit", message: "after requestAccess(.audio)", data: ["postAuth": postMicAuth.rawValue, "postAuthName": SpatialDebugLog.authName(postMicAuth), "deviceID": Int(deviceID)])
+        if postMicAuth != .authorized {
+            logger.error("Microphone permission is \(SpatialDebugLog.authName(postMicAuth), privacy: .public) — Spatial Speaker capture cannot read its loopback input. User must grant Microphone permission in System Settings > Privacy & Security > Microphone.")
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2014, userInfo: [
+                NSLocalizedDescriptionKey: "Microphone permission is \(SpatialDebugLog.authName(postMicAuth)). Open System Settings > Privacy & Security > Microphone and grant access to Spatial, then try again."
+            ])
+        }
+        // #endregion
+
+        let captureConfiguration = try makeCaptureStreamConfiguration(for: deviceID)
 
         var description = AudioComponentDescription(
             componentType: kAudioUnitType_Output,
@@ -629,27 +760,72 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         }
 
         do {
+            logger.info("Configuring HAL input-unit loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
             var enableInput: UInt32 = 1
-            try checkStatus(
-                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &enableInput, UInt32(MemoryLayout<UInt32>.size)),
+            try setAUProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_EnableIO,
+                scope: kAudioUnitScope_Input,
+                element: 1,
+                data: &enableInput,
+                size: UInt32(MemoryLayout<UInt32>.size),
+                label: "EnableIO/Input/elem1",
                 message: "Could not enable Spatial Speaker input on HAL fallback unit"
             )
 
             var disableOutput: UInt32 = 0
-            try checkStatus(
-                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &disableOutput, UInt32(MemoryLayout<UInt32>.size)),
+            try setAUProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_EnableIO,
+                scope: kAudioUnitScope_Output,
+                element: 0,
+                data: &disableOutput,
+                size: UInt32(MemoryLayout<UInt32>.size),
+                label: "EnableIO/Output/elem0",
                 message: "Could not disable Spatial Speaker output on HAL fallback unit"
             )
 
             var mutableDeviceID = deviceID
-            try checkStatus(
-                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &mutableDeviceID, UInt32(MemoryLayout<AudioDeviceID>.size)),
+            try setAUProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                scope: kAudioUnitScope_Global,
+                element: 0,
+                data: &mutableDeviceID,
+                size: UInt32(MemoryLayout<AudioDeviceID>.size),
+                label: "CurrentDevice/Global/elem0",
                 message: "Could not bind HAL fallback unit to Spatial Speaker"
             )
 
-            var asbd = captureFormat.streamDescription.pointee
-            try checkStatus(
-                AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &asbd, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)),
+            // Log device-side hardware format on (Input, element=1) before we attempt to
+            // override the AUHAL conversion-out format on (Output, element=1). Mismatch
+            // between these two is the most common source of -10877.
+            var hardwareFormat = AudioStreamBasicDescription()
+            var hardwareFormatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let hardwareFormatStatus = AudioUnitGetProperty(
+                audioUnit,
+                kAudioUnitProperty_StreamFormat,
+                kAudioUnitScope_Input,
+                1,
+                &hardwareFormat,
+                &hardwareFormatSize
+            )
+            logger.info(
+                "AU get StreamFormat/Input/elem1 attempt=\(self.activeCaptureAttemptSerial, privacy: .public) status=\(hardwareFormatStatus, privacy: .public) sampleRate=\(hardwareFormat.mSampleRate, privacy: .public) channels=\(hardwareFormat.mChannelsPerFrame, privacy: .public) bytesPerFrame=\(hardwareFormat.mBytesPerFrame, privacy: .public) flags=\(hardwareFormat.mFormatFlags, privacy: .public)"
+            )
+
+            var asbd = captureConfiguration.streamDescription
+            logger.info(
+                "AU set StreamFormat/Output/elem1 about-to-set sampleRate=\(asbd.mSampleRate, privacy: .public) channels=\(asbd.mChannelsPerFrame, privacy: .public) bytesPerFrame=\(asbd.mBytesPerFrame, privacy: .public) flags=\(asbd.mFormatFlags, privacy: .public)"
+            )
+            try setAUProperty(
+                audioUnit,
+                kAudioUnitProperty_StreamFormat,
+                scope: kAudioUnitScope_Output,
+                element: 1,
+                data: &asbd,
+                size: UInt32(MemoryLayout<AudioStreamBasicDescription>.size),
+                label: "StreamFormat/Output/elem1",
                 message: "Could not configure HAL fallback capture stream format"
             )
 
@@ -657,13 +833,43 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
                 inputProc: liveCaptureInputCallback,
                 inputProcRefCon: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
             )
-            try checkStatus(
-                AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
+            try setAUProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_SetInputCallback,
+                scope: kAudioUnitScope_Global,
+                element: 0,
+                data: &callback,
+                size: UInt32(MemoryLayout<AURenderCallbackStruct>.size),
+                label: "SetInputCallback/Global/elem0",
                 message: "Could not install HAL fallback capture callback"
             )
 
-            try checkStatus(AudioUnitInitialize(audioUnit), message: "Could not initialize HAL fallback capture unit")
-            try checkStatus(AudioOutputUnitStart(audioUnit), message: "Could not start HAL fallback capture unit")
+            logger.info("Initializing HAL input-unit loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
+            let initializeStatus = AudioUnitInitialize(audioUnit)
+            logger.info("AU AudioUnitInitialize attempt=\(self.activeCaptureAttemptSerial, privacy: .public) status=\(initializeStatus, privacy: .public)")
+            try checkStatus(initializeStatus, message: "Could not initialize HAL fallback capture unit")
+            logger.info("Starting HAL input-unit loopback capture. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public)")
+            let startStatus = AudioOutputUnitStart(audioUnit)
+            logger.info("AU AudioOutputUnitStart attempt=\(self.activeCaptureAttemptSerial, privacy: .public) status=\(startStatus, privacy: .public)")
+            try checkStatus(startStatus, message: "Could not start HAL fallback capture unit")
+
+            // Confirm coreaudiod considers the underlying device actually running. If
+            // AudioOutputUnitStart returned noErr but kAudioDevicePropertyDeviceIsRunning
+            // is still 0, that strongly indicates the device IO never started — which
+            // matches the symptom of HAL callbacks delivering nothing but silence.
+            var isRunning: UInt32 = 0
+            var isRunningSize = UInt32(MemoryLayout<UInt32>.size)
+            var isRunningAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsRunning,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            let isRunningStatus = AudioObjectGetPropertyData(deviceID, &isRunningAddress, 0, nil, &isRunningSize, &isRunning)
+            logger.info(
+                "Spatial Speaker DeviceIsRunning post-start attempt=\(self.activeCaptureAttemptSerial, privacy: .public) deviceID=\(deviceID, privacy: .public) status=\(isRunningStatus, privacy: .public) isRunning=\(isRunning, privacy: .public)"
+            )
+
+            self.captureAttemptProgress = .startedInHAL
         } catch {
             AudioComponentInstanceDispose(audioUnit)
             throw error
@@ -671,7 +877,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
 
         self.halInputAudioUnit = audioUnit
         self.activeDeviceID = deviceID
-        self.captureFormat = captureFormat
+        self.captureConfiguration = captureConfiguration
         self.activeLoopbackBackend = .halInputUnit
         self.pendingFallbackDeviceID = deviceID
         self.pendingFallbackDeviceName = name
@@ -761,27 +967,125 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
         return streamIDs
     }
 
+    private func describeStreamConfiguration(deviceID: AudioDeviceID, scope: AudioObjectPropertyScope, scopeName: String) -> String {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: scope,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        let sizeStatus = AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &dataSize)
+        guard sizeStatus == noErr, dataSize > 0 else {
+            return "scope=\(scopeName) sizeStatus=\(sizeStatus) dataSize=\(dataSize)"
+        }
+
+        let rawBuffer = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawBuffer.deallocate() }
+
+        let dataStatus = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, rawBuffer)
+        guard dataStatus == noErr else {
+            return "scope=\(scopeName) dataStatus=\(dataStatus)"
+        }
+
+        let bufferList = rawBuffer.bindMemory(to: AudioBufferList.self, capacity: 1)
+        let pointer = UnsafeMutableAudioBufferListPointer(bufferList)
+        let bufferDescriptions = pointer.enumerated().map { index, buffer in
+            "buf\(index)={ch=\(buffer.mNumberChannels) bytes=\(buffer.mDataByteSize)}"
+        }.joined(separator: " ")
+        let totalChannels = pointer.reduce(0) { $0 + Int($1.mNumberChannels) }
+        return "scope=\(scopeName) buffers=\(pointer.count) totalChannels=\(totalChannels) \(bufferDescriptions)"
+    }
+
+    private func describeStream(streamID: AudioObjectID) -> String {
+        var directionAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioStreamPropertyDirection,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var direction: UInt32 = 0
+        var directionSize = UInt32(MemoryLayout<UInt32>.size)
+        let directionStatus = AudioObjectGetPropertyData(streamID, &directionAddress, 0, nil, &directionSize, &direction)
+
+        var terminalAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioStreamPropertyTerminalType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var terminal: UInt32 = 0
+        var terminalSize = UInt32(MemoryLayout<UInt32>.size)
+        let terminalStatus = AudioObjectGetPropertyData(streamID, &terminalAddress, 0, nil, &terminalSize, &terminal)
+
+        var activeAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioStreamPropertyIsActive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var isActive: UInt32 = 0
+        var activeSize = UInt32(MemoryLayout<UInt32>.size)
+        let activeStatus = AudioObjectGetPropertyData(streamID, &activeAddress, 0, nil, &activeSize, &isActive)
+
+        let directionLabel: String
+        switch direction {
+        case 1: directionLabel = "input"
+        case 0: directionLabel = "output"
+        default: directionLabel = "unknown(\(direction))"
+        }
+
+        return "streamID=\(streamID) direction=\(directionLabel) terminal=0x\(String(terminal, radix: 16)) isActive=\(isActive) directionStatus=\(directionStatus) terminalStatus=\(terminalStatus) activeStatus=\(activeStatus)"
+    }
+
+    private func logSpatialDeviceTopology(for deviceID: AudioDeviceID, name: String) {
+        let inputConfig = describeStreamConfiguration(deviceID: deviceID, scope: kAudioObjectPropertyScopeInput, scopeName: "input")
+        let outputConfig = describeStreamConfiguration(deviceID: deviceID, scope: kAudioObjectPropertyScopeOutput, scopeName: "output")
+        let globalConfig = describeStreamConfiguration(deviceID: deviceID, scope: kAudioObjectPropertyScopeGlobal, scopeName: "global")
+
+        let inputStreams = (try? streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeInput)) ?? []
+        let outputStreams = (try? streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeOutput)) ?? []
+        let globalStreams = (try? streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeGlobal)) ?? []
+
+        let streamSummary = (inputStreams + outputStreams).map(describeStream(streamID:)).joined(separator: " | ")
+
+        logger.info(
+            "DIAG topology probe device='\(name, privacy: .public)' deviceID=\(deviceID, privacy: .public) inputStreams=\(inputStreams, privacy: .public) outputStreams=\(outputStreams, privacy: .public) globalStreams=\(globalStreams, privacy: .public)"
+        )
+        logger.info(
+            "DIAG topology probe streamConfig device='\(name, privacy: .public)' \(inputConfig, privacy: .public) || \(outputConfig, privacy: .public) || \(globalConfig, privacy: .public)"
+        )
+        if !streamSummary.isEmpty {
+            logger.info("DIAG topology probe streams device='\(name, privacy: .public)' \(streamSummary, privacy: .public)")
+        }
+    }
+
     fileprivate func handleHALInput(frameCount: UInt32, ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>, timeStamp: UnsafePointer<AudioTimeStamp>) -> OSStatus {
-        guard let halInputAudioUnit, let captureFormat, let deviceID = activeDeviceID else {
+        guard let halInputAudioUnit, let captureConfiguration, let deviceID = activeDeviceID else {
             return noErr
         }
 
-        let channelCount = Int(captureFormat.channelCount)
+        let channelCount = captureConfiguration.channelCount
         let bytesPerChannel = Int(frameCount) * MemoryLayout<Float>.size
+        let bufferCount = captureConfiguration.isInterleaved ? 1 : channelCount
         let audioBufferListSize = MemoryLayout<AudioBufferList>.size
-            + max(channelCount - 1, 0) * MemoryLayout<AudioBuffer>.size
+            + max(bufferCount - 1, 0) * MemoryLayout<AudioBuffer>.size
         let audioBufferList = UnsafeMutableRawPointer.allocate(
             byteCount: audioBufferListSize,
             alignment: MemoryLayout<AudioBufferList>.alignment
         ).bindMemory(to: AudioBufferList.self, capacity: 1)
-        audioBufferList.pointee.mNumberBuffers = UInt32(channelCount)
+        audioBufferList.pointee.mNumberBuffers = UInt32(bufferCount)
         let bufferListPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
 
-        for index in 0..<channelCount {
+        for index in 0..<bufferCount {
+            let numberChannels: UInt32 = captureConfiguration.isInterleaved ? UInt32(channelCount) : 1
+            let byteSize = captureConfiguration.isInterleaved
+                ? UInt32(Int(frameCount) * Int(captureConfiguration.streamDescription.mBytesPerFrame))
+                : UInt32(bytesPerChannel)
             bufferListPointer[index] = AudioBuffer(
-                mNumberChannels: 1,
-                mDataByteSize: UInt32(bytesPerChannel),
-                mData: UnsafeMutableRawPointer.allocate(byteCount: bytesPerChannel, alignment: MemoryLayout<Float>.alignment)
+                mNumberChannels: numberChannels,
+                mDataByteSize: byteSize,
+                mData: UnsafeMutableRawPointer.allocate(byteCount: Int(byteSize), alignment: MemoryLayout<Float>.alignment)
             )
         }
 
@@ -798,30 +1102,33 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             return status
         }
 
-        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: frameCount) else {
+        guard let decodedBuffer = decodeLoopbackBufferList(bufferListPointer, format: captureConfiguration.processingFormat) else {
+            logger.error("HAL fallback AudioUnitRender returned an undecodable buffer layout. interleaved=\(captureConfiguration.isInterleaved, privacy: .public) buffers=\(bufferCount, privacy: .public) channels=\(channelCount, privacy: .public) frames=\(frameCount, privacy: .public)")
             return noErr
         }
 
-        pcmBuffer.frameLength = frameCount
-        if let destination = pcmBuffer.floatChannelData {
-            for channel in 0..<channelCount {
-                if let source = bufferListPointer[channel].mData {
-                    memcpy(destination[channel], source, bytesPerChannel)
-                }
-            }
-        }
-
         loopbackCallbackCount += 1
+        if captureAttemptProgress == .startedInHAL {
+            captureAttemptProgress = .driverInputStarted
+        }
+        if captureAttemptProgress == .driverInputStarted {
+            captureAttemptProgress = .driverReadInputObserved
+        }
+        if loopbackCallbackCount <= 6 {
+            logger.debug(
+                "DIAG HAL callback n=\(self.loopbackCallbackCount, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) preferredBackend=\(self.preferredLoopbackBackend.rawValue, privacy: .public) expectedLoopbackSource=input deviceInterleaved=\(captureConfiguration.isInterleaved, privacy: .public) buffers=\(bufferCount, privacy: .public) channels=\(channelCount, privacy: .public) frames=\(frameCount, privacy: .public)"
+            )
+        }
         processLoopbackBuffer(
-            pcmBuffer,
+            decodedBuffer.pcmBuffer,
             backend: .halInputUnit,
             deviceID: deviceID,
             deviceName: pendingFallbackDeviceName ?? AudioDeviceService.spatialVirtualDeviceName,
             callbackCount: loopbackCallbackCount,
-            bufferCount: channelCount,
-            frameCount: frameCount
+            bufferCount: bufferCount,
+            frameCount: decodedBuffer.frameCount
         )
-        pipeline.deliver(pcmBuffer)
+        pipeline.deliver(decodedBuffer.pcmBuffer)
         return noErr
     }
 
@@ -845,7 +1152,7 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
             let peakBucket = Int(peak * 100)
             if callbackCount <= 6 || peakBucket != lastLoopbackPeakBucket {
                 lastLoopbackPeakBucket = peakBucket
-                logger.debug("Loopback callback n=\(callbackCount, privacy: .public) backend=\(backend.rawValue, privacy: .public) buffers=\(bufferCount, privacy: .public) frames=\(frameCount, privacy: .public) peak=\(peak, format: .fixed(precision: 4))")
+                logger.debug("Loopback callback n=\(callbackCount, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) backend=\(backend.rawValue, privacy: .public) preferredBackend=\(self.preferredLoopbackBackend.rawValue, privacy: .public) buffers=\(bufferCount, privacy: .public) frames=\(frameCount, privacy: .public) peak=\(peak, format: .fixed(precision: 4))")
             }
         }
 
@@ -866,9 +1173,19 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
            peak <= startupSilenceThreshold,
            !hasConfirmedHealthySignal {
             let outputStillSpatial = deviceService.systemOutputMatchesDeviceUID(AudioDeviceService.spatialVirtualDeviceUID)
-            let message = outputStillSpatial
-                ? "System output is set to Spatial Speaker, but no external audio client is writing into it."
-                : "System output left Spatial Speaker before live capture received any audio."
+            let message: String
+            if outputStillSpatial {
+                switch captureAttemptProgress {
+                case .startedInHAL:
+                    message = "HAL did not register Spatial as an input client for Spatial Speaker."
+                case .driverInputStarted, .driverReadInputObserved:
+                    message = "HAL scheduled input callbacks, but Spatial Speaker never delivered readable loopback audio. Check driver StartIO/ReadInput logs for scheduling or format mismatch."
+                case .armed, .healthySignalConfirmed:
+                    message = "System output is set to Spatial Speaker, but the live capture attempt never reached a healthy input state."
+                }
+            } else {
+                message = "System output left Spatial Speaker before live capture received any audio."
+            }
             logger.error("\(message, privacy: .public)")
             startToken = UUID()
             stopCurrentCapture(updatingState: false)
@@ -1003,20 +1320,54 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
     private func confirmHealthySignalIfNeeded(deviceID: AudioDeviceID, deviceName: String, backend: LoopbackBackend, peak: Float) {
         guard !hasConfirmedHealthySignal else { return }
         hasConfirmedHealthySignal = true
+        captureAttemptProgress = .healthySignalConfirmed
         captureState = .capturing
         logger.info("Live capture verified with nonzero signal. targetDeviceID=\(deviceID, privacy: .public) backend=\(backend.rawValue, privacy: .public) peak=\(peak, format: .fixed(precision: 4)) deviceName=\(deviceName, privacy: .public)")
         pipeline.notifyCaptureStarted()
     }
 
-    private func makeCaptureStreamFormat(for deviceID: AudioDeviceID) throws -> AVAudioFormat {
-        let sampleRate = try nominalSampleRate(for: deviceID)
-        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 2, interleaved: false) else {
+    private func makeCaptureStreamConfiguration(for deviceID: AudioDeviceID) throws -> CaptureStreamConfiguration {
+        let streamID = try inputStreamObjectID(for: deviceID)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioStreamPropertyPhysicalFormat,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var streamDescription = AudioStreamBasicDescription()
+        var dataSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        try checkStatus(
+            AudioObjectGetPropertyData(streamID, &address, 0, nil, &dataSize, &streamDescription),
+            message: "Could not query the Spatial Speaker input stream format"
+        )
+
+        guard streamDescription.mChannelsPerFrame == 2,
+              let deviceFormat = AVAudioFormat(streamDescription: &streamDescription),
+              let processingFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: deviceFormat.sampleRate, channels: deviceFormat.channelCount, interleaved: false) else {
             throw NSError(domain: "Spatial.LiveAudioCapture", code: -2007, userInfo: [
-                NSLocalizedDescriptionKey: "Could not create the Spatial Speaker capture format"
+                NSLocalizedDescriptionKey: "Could not create a compatible Spatial Speaker capture format"
             ])
         }
 
-        return format
+        logger.info(
+            "Resolved Spatial Speaker input format. attempt=\(self.activeCaptureAttemptSerial, privacy: .public) streamID=\(streamID, privacy: .public) sampleRate=\(deviceFormat.sampleRate, privacy: .public) channels=\(deviceFormat.channelCount, privacy: .public) interleaved=\(deviceFormat.isInterleaved, privacy: .public) bytesPerFrame=\(streamDescription.mBytesPerFrame, privacy: .public) formatFlags=\(streamDescription.mFormatFlags, privacy: .public)"
+        )
+
+        return CaptureStreamConfiguration(
+            streamID: streamID,
+            deviceFormat: deviceFormat,
+            processingFormat: processingFormat,
+            streamDescription: streamDescription
+        )
+    }
+
+    private func inputStreamObjectID(for deviceID: AudioDeviceID) throws -> AudioObjectID {
+        let streamIDs = try streamObjectIDs(for: deviceID, scope: kAudioObjectPropertyScopeInput)
+        guard let streamID = streamIDs.first else {
+            throw NSError(domain: "Spatial.LiveAudioCapture", code: -2012, userInfo: [
+                NSLocalizedDescriptionKey: "Spatial Speaker does not expose an input stream"
+            ])
+        }
+        return streamID
     }
 
     private func nominalSampleRate(for deviceID: AudioDeviceID) throws -> Double {
@@ -1040,6 +1391,39 @@ final class LiveAudioCaptureService: NSObject, AudioCaptureService {
                 NSLocalizedDescriptionKey: message
             ])
         }
+    }
+
+    @discardableResult
+    private func setAUProperty(
+        _ unit: AudioUnit,
+        _ propertyID: AudioUnitPropertyID,
+        scope: AudioUnitScope,
+        element: AudioUnitElement,
+        data: UnsafeMutableRawPointer,
+        size: UInt32,
+        label: String,
+        message: String
+    ) throws -> OSStatus {
+        let status = AudioUnitSetProperty(unit, propertyID, scope, element, data, size)
+        let scopeName: String
+        switch scope {
+        case kAudioUnitScope_Global: scopeName = "global"
+        case kAudioUnitScope_Input: scopeName = "input"
+        case kAudioUnitScope_Output: scopeName = "output"
+        default: scopeName = "scope=\(scope)"
+        }
+        logger.info(
+            "AU set \(label, privacy: .public) attempt=\(self.activeCaptureAttemptSerial, privacy: .public) prop=\(propertyID, privacy: .public) scope=\(scopeName, privacy: .public) element=\(element, privacy: .public) size=\(size, privacy: .public) status=\(status, privacy: .public)"
+        )
+        if status != noErr {
+            logger.error(
+                "AU set \(label, privacy: .public) FAILED attempt=\(self.activeCaptureAttemptSerial, privacy: .public) status=\(status, privacy: .public) message=\(message, privacy: .public)"
+            )
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
+                NSLocalizedDescriptionKey: "\(message) (\(label) status=\(status))"
+            ])
+        }
+        return status
     }
 
     private func userFacingCaptureError(_ error: Error, target: AudioCaptureTarget) -> String {
@@ -1442,6 +1826,9 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     private var manualRenderOutputUnit: AudioUnit?
     private var manualRenderDeviceID: AudioDeviceID?
     private var isManualRenderActive = false
+    // #region agent log
+    private var manualRenderSilentGuardCount = 0
+    // #endregion
     private var ringBufferOverflowCount = 0
     private var sourceUnderrunCount = 0
     private var manualRenderCannotDoInContextCount = 0
@@ -1564,6 +1951,11 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         inputLevel = max(0, min(1, level))
     }
 
+    /// Audio device ID used for the manual-render HAL monitor output, when pinned.
+    var pinnedMonitorOutputDeviceID: AudioDeviceID? {
+        processingQueue.sync { pinnedOutputDeviceID }
+    }
+
     func pinOutputDevice(_ deviceID: AudioDeviceID) {
         // Synchronous so the caller can switch the system default immediately after,
         // knowing the engine is already pinned to real hardware before Spatial Speaker takes over.
@@ -1617,7 +2009,6 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         engine.connect(motionMixer, to: reverbNode, format: processingFormat)
         engine.connect(reverbNode, to: engine.mainMixerNode, format: processingFormat)
 
-        engine.mainMixerNode.outputVolume = 1
         logger.info("Attached pull-based source node for live monitor playback")
         applyRealtimeSettings()
     }
@@ -1640,6 +2031,8 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         pipeline.setCaptureErrorHandler { [weak self] message in
             self?.processingQueue.async {
                 self?.resetCaptureDrivenState()
+                self?.teardownManualRenderOutputUnit()
+                self?.resetBufferedAudio()
                 self?.emitIdleVisualizerFrame()
                 self?.currentStatus = .error(message)
             }
@@ -1653,6 +2046,14 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         }
 
         if engine.isRunning {
+            // After AVAudioEngineConfigurationChange the engine reports isRunning=true
+            // but the AVAudioEngine reconfig handler resets isManualRenderActive=false
+            // before this method runs. Without re-asserting the flag here,
+            // renderManualOutput's `guard engine.isRunning, isManualRenderActive`
+            // permanently returns silence after every reconfiguration. Confirmed by
+            // debug-c5768c.log H6 evidence (isManualRenderActiveAfter=false despite
+            // engineRunningAfter=true on every reconfig event).
+            isManualRenderActive = true
             return
         }
 
@@ -1701,14 +2102,16 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             motionMixer.pan = 0
             motionMixer.outputVolume = 1
             reverbNode.wetDryMix = 0
+            engine.mainMixerNode.outputVolume = 1
             return
         }
 
-        let reverbMix = Float(min(96, 8 + (currentSettings.reverb * 72) + (currentSettings.elevation * 10)))
-        let focusCompensation = currentSettings.centerFocus * 0.04
-        let depthVolume = Float(0.86 + (currentSettings.depth * 0.12) + focusCompensation)
+        let reverbMix = Float(min(88, 6 + (currentSettings.reverb * 62) + (currentSettings.elevation * 8)))
+        let focusCompensation = currentSettings.centerFocus * 0.035
+        let depthVolume = Float(0.82 + (currentSettings.depth * 0.11) + focusCompensation)
         reverbNode.wetDryMix = reverbMix
-        motionMixer.outputVolume = depthVolume
+        motionMixer.outputVolume = min(1.0, depthVolume)
+        engine.mainMixerNode.outputVolume = 0.92
     }
 
     private func startMotionTimerIfNeeded() {
@@ -1747,7 +2150,7 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
         let volumeMotion = 0.91 + (currentSettings.depth * 0.08) + (pulse * currentSettings.elevation * 0.04 * (0.82 - (currentSettings.centerFocus * 0.24)))
 
         motionMixer.pan = Float(max(-1, min(1, pan)))
-        motionMixer.outputVolume = Float(max(0.5, min(1.2, volumeMotion)))
+        motionMixer.outputVolume = Float(max(0.5, min(1.0, volumeMotion)))
     }
 
     private func emitVisualizerFrame() {
@@ -1819,6 +2222,7 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             }
             return
         }
+
 
         do {
             try ensureEngineRunning()
@@ -1980,6 +2384,14 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
             }
 
             if readResult.framesMissing > 0 {
+                guard self.isCaptureRunning else {
+                    if self.sourceRenderCallbackCount <= 6 || self.sourceRenderCallbackCount % 256 == 0 {
+                        self.logger.debug(
+                            "Source node waiting for confirmed capture. requested=\(frameCount, privacy: .public) read=\(readResult.framesRead, privacy: .public) missing=\(readResult.framesMissing, privacy: .public) buffered=\(self.queuedFrameCount, privacy: .public)"
+                        )
+                    }
+                    return noErr
+                }
                 self.sourceUnderrunCount += 1
                 if self.sourceUnderrunCount != self.lastLoggedUnderrunCount {
                     self.lastLoggedUnderrunCount = self.sourceUnderrunCount
@@ -2167,7 +2579,19 @@ final class LiveDSPEngine: InputReactiveDSPEngine {
     }
 
     private func renderManualOutput(into ioData: UnsafeMutablePointer<AudioBufferList>, frameCount: UInt32) -> OSStatus {
+        // #region agent log
+        // Lightweight, real-time-safe atomic counter. Callable from the AUHAL IOProc
+        // without any Swift heap allocation or queue dispatch — both are unsafe in a
+        // real-time audio thread. Aggregated counters are sampled by the off-realtime
+        // heartbeat in installEngineConfigurationObserver. See debug-c5768c.log.
+        let engineRunningSnap = engine.isRunning
+        let isActiveSnap = isManualRenderActive
+        let _ = (engineRunningSnap, isActiveSnap)
+        // #endregion
         guard engine.isRunning, isManualRenderActive else {
+            // #region agent log
+            manualRenderSilentGuardCount &+= 1
+            // #endregion
             zeroAudioBufferList(ioData)
             return noErr
         }

@@ -93,6 +93,15 @@ final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
 
     func restoreOnLaunchIfNeeded() {
         guard UserDefaults.standard.string(forKey: savedDeviceUIDKey) != nil else { return }
+        guard let spatial = deviceService.spatialVirtualDevice() else {
+            UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
+            return
+        }
+        guard deviceService.systemOutputDevice()?.id == spatial.id else {
+            logger.info("Cleared stale virtual routing restore key; system output is not stuck on Spatial Speaker.")
+            UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
+            return
+        }
         logger.warning("Found unrestored saved device from prior run — restoring system output now")
         restoreSystemOutput()
     }
@@ -136,15 +145,15 @@ final class SpatialVirtualAudioRoutingService: VirtualAudioRoutingService {
     ) -> AudioOutputDevice? {
         if let preferredMonitorDeviceUID,
            let preferred = deviceService.deviceWithUID(preferredMonitorDeviceUID),
-           !preferred.isSpatialVirtualDevice {
+           preferred.isSuitableHardwareMonitorOutputDevice {
             return preferred
         }
 
-        if let currentOutput, !currentOutput.isSpatialVirtualDevice {
+        if let currentOutput, currentOutput.isSuitableHardwareMonitorOutputDevice {
             return currentOutput
         }
 
-        return deviceService.allOutputDevices().first { !$0.isSpatialVirtualDevice }
+        return deviceService.allOutputDevices().first { $0.isSuitableHardwareMonitorOutputDevice }
     }
 }
 

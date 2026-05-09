@@ -36,6 +36,33 @@ It captures:
 - filtered `coreaudiod` and `amfid` logs
 - `system_profiler SPAudioDataType`
 
+### Live capture investigation
+
+When debugging the "HAL callbacks fire but every peak is 0.0000" failure, two extra
+helpers are available:
+
+`Drivers/SpatialSpeaker/debug-capture-logs.sh [seconds]`
+
+Streams three independent log predicates (driver subsystem, coreaudiod/AUHAL,
+Spatial app subsystem) into a timestamped `debug-logs/` folder while you perform
+exactly one capture attempt. Prints a count summary at the end (AddDeviceClient,
+StartIO, WillDoIOOperation, DoIO, ReadInput, WriteMix, -10877, IOWorkLoop overload).
+The summary auto-classifies the failure mode (e.g. "received AddDeviceClient but
+NEVER received StartIO").
+
+`swift Drivers/SpatialSpeaker/blackhole-ab-test.swift <deviceUIDOrName> [seconds]`
+
+Stand-alone Swift CLI that mirrors `LiveAudioCaptureService.startLoopbackCaptureWithHALInputUnit`'s
+exact property-set sequence with per-call status logging. Use it to A/B test the
+same setup against any installed virtual loopback (BlackHole 2ch, Loopback, etc.)
+to determine whether the bug is in our driver's property model or in the Swift
+AUHAL setup. Examples:
+
+```
+swift Drivers/SpatialSpeaker/blackhole-ab-test.swift "BlackHole 2ch" 5
+swift Drivers/SpatialSpeaker/blackhole-ab-test.swift com.spatial.app.driver.speaker 5
+```
+
 ## Failure Signatures
 
 - `amfid ... adhoc signed or signed by an unknown certificate chain`
@@ -46,6 +73,8 @@ It captures:
   Core Audio is rejecting part of the driver object graph during publication. Audit `SpatialSpeakerDriver.c` property size/data consistency first.
 - `AddInstanceForFactory ... F8BB1C28-BAE8-11D6-9C31-00039315CD46`
   Core Audio is probing the legacy AudioServerPlugIn factory path. `Info.plist` and `SpatialSpeaker_Create` must continue to support that UUID.
+- Severe distortion / “earrape” while peaks look healthy in logs
+  Core Audio may attach **multiple capture clients** to the same device. A single consumer ring makes each `ReadInput` eat a disjoint slice of the writer’s frames. From `diag-2026-05-09-r10-peekread` onward, `ReadInput` **peeks** the newest samples (same mix for every tap) instead of partitioning the ring across readers.
 
 ## Current State
 

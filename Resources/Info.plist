@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Spatial captures system audio output so it can apply real-time 8D processing locally on your Mac.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Spatial captures the loopback audio that macOS routes through the Spatial Speaker virtual device. The driver's input stream is classified as a microphone by Core Audio, so this permission is required even though no real microphone is recorded.</string>
 	<key>NSScreenCaptureDescription</key>
 	<string>Spatial uses Screen Recording access to capture your system audio output in real time. No screen content is captured or stored.</string>
 	<key>NSAppleEventsUsageDescription</key>

@@ -39,6 +39,8 @@ final class SpatialAppModel: ObservableObject {
     private var playbackRefreshTimer: Timer?
     private var isWidgetManuallyExpanded = false
     private var isAwaitingCaptureStart = false
+    /// Physical output UID last used for automatic monitor routing (8D playback), for unplug fallback.
+    private var lastAutomaticMonitorOutputUID: String?
     private var lastLoggedNowPlayingSnapshot: NowPlayingInfo?
     private var lastLoggedDemoPlaybackSignature: String?
 
@@ -91,6 +93,7 @@ final class SpatialAppModel: ObservableObject {
         SpatialColor.setTheme(settings.theme)
         bindEngine()
         bindCaptureService()
+        installHardwareMonitorRouteObserver()
         bindDemoPlayback()
         environment.dspEngine.configure(with: settings)
         startPlaybackRefreshTimer()
@@ -334,6 +337,9 @@ final class SpatialAppModel: ObservableObject {
 
     func updateMonitorOutputDeviceUID(_ uid: String?) {
         updateSettings { $0.monitorOutputDeviceUID = uid }
+        if uid != nil {
+            lastAutomaticMonitorOutputUID = nil
+        }
 
         guard selectedAudioSource == .systemAudio || selectedAudioSource == .spotify || selectedAudioSource == .appleMusic else {
             return
@@ -755,6 +761,8 @@ final class SpatialAppModel: ObservableObject {
 
         if activated {
             logger.info("Virtual routing activated — system audio routed through Spatial Speaker")
+            environment.audioDeviceService.captureRoutingPhysicalOutputBaseline()
+            syncLastAutomaticMonitorOutputUIDFromEngineIfNeeded()
         } else if routing.virtualDeviceAvailable {
             logger.warning("Spatial Speaker is installed but routing activation failed")
         } else {
@@ -767,7 +775,95 @@ final class SpatialAppModel: ObservableObject {
     private func deactivateVirtualRouting() {
         guard environment.virtualAudioRoutingService.isActive else { return }
         environment.virtualAudioRoutingService.deactivate()
+        lastAutomaticMonitorOutputUID = nil
+        environment.audioDeviceService.clearRoutingPhysicalOutputBaseline()
         logger.info("Virtual routing deactivated — system output restored")
+    }
+
+    private func installHardwareMonitorRouteObserver() {
+        environment.audioDeviceService.observeHardwareOutputRouteChanges { [weak self] in
+            Task { @MainActor in
+                self?.handleAutomaticHardwareMonitorRouteChange()
+            }
+        }
+    }
+
+    private func syncLastAutomaticMonitorOutputUIDFromEngineIfNeeded() {
+        guard settings.monitorOutputDeviceUID == nil,
+              let liveEngine = environment.dspEngine as? LiveDSPEngine,
+              let deviceID = liveEngine.pinnedMonitorOutputDeviceID,
+              let device = environment.audioDeviceService.outputDevice(forID: deviceID) else {
+            return
+        }
+        lastAutomaticMonitorOutputUID = device.uid
+    }
+
+    private func handleAutomaticHardwareMonitorRouteChange() {
+        guard environment.virtualAudioRoutingService.isActive,
+              settings.monitorOutputDeviceUID == nil,
+              let liveEngine = environment.dspEngine as? LiveDSPEngine else {
+            return
+        }
+
+        let delta = environment.audioDeviceService.routingPhysicalOutputDeltaUpdatingBaseline()
+
+        if let preferred = Self.preferredAddedMonitorOutput(from: delta.added) {
+            liveEngine.pinOutputDevice(preferred.id)
+            lastAutomaticMonitorOutputUID = preferred.uid
+            logger.info("Automatic monitor repinned for new output: \(preferred.name, privacy: .public)")
+            return
+        }
+
+        guard !delta.removedUIDs.isEmpty,
+              let pinnedUID = lastAutomaticMonitorOutputUID,
+              delta.removedUIDs.contains(pinnedUID) else {
+            return
+        }
+
+        guard let fallback = Self.fallbackAutomaticMonitorOutput(
+            excludingUIDs: delta.removedUIDs,
+            deviceService: environment.audioDeviceService
+        ) else {
+            return
+        }
+
+        liveEngine.pinOutputDevice(fallback.id)
+        lastAutomaticMonitorOutputUID = fallback.uid
+        logger.info("Automatic monitor repinned after unplug: \(fallback.name, privacy: .public)")
+    }
+
+    private static func preferredAddedMonitorOutput(from added: [AudioOutputDevice]) -> AudioOutputDevice? {
+        guard !added.isEmpty else { return nil }
+        let annotated = added.map { ($0, $0.name.lowercased()) }
+        if let match = annotated.first(where: {
+            $0.1.contains("headphone") || $0.1.contains("headset") || $0.1.contains("earphone")
+        }) {
+            return match.0
+        }
+        if let match = annotated.first(where: { $0.1.contains("airpods") }) {
+            return match.0
+        }
+        return added.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.first
+    }
+
+    private static func fallbackAutomaticMonitorOutput(
+        excludingUIDs: Set<String>,
+        deviceService: AudioDeviceService
+    ) -> AudioOutputDevice? {
+        let physical = deviceService.allOutputDevices().filter {
+            $0.isSuitableHardwareMonitorOutputDevice && !excludingUIDs.contains($0.uid)
+        }
+        let annotated = physical.map { ($0, $0.name.lowercased()) }
+        if let match = annotated.first(where: { $0.1.contains("macbook") && $0.1.contains("speaker") }) {
+            return match.0
+        }
+        if let match = annotated.first(where: { $0.1.contains("built-in") && $0.1.contains("output") }) {
+            return match.0
+        }
+        if let match = annotated.first(where: { $0.1.contains("speaker") }) {
+            return match.0
+        }
+        return physical.first
     }
 
     private func startPlaybackRefreshTimer() {

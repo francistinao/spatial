@@ -16,6 +16,11 @@ struct AudioOutputDevice: Equatable {
         uid == AudioDeviceService.spatialVirtualDeviceUID
             || name == AudioDeviceService.spatialVirtualDeviceName
     }
+
+    /// Core Audio aggregate devices (e.g. `CADefaultDeviceAggregate-*`). Pinning the manual-render HAL output to them is unstable and can race with live graph setup.
+    var isSuitableHardwareMonitorOutputDevice: Bool {
+        !isSpatialVirtualDevice && !uid.hasPrefix("CADefaultDeviceAggregate")
+    }
 }
 
 struct HALDriverFactoryConflict: Equatable {
@@ -62,6 +67,11 @@ final class AudioDeviceService {
     private let repeatedEnumerationLogInterval: TimeInterval = 15
     private let repeatedReadinessFailureLogInterval: TimeInterval = 30
 
+    /// Snapshot of non-virtual output device UIDs while virtual routing is active; used to detect plug/unplug.
+    private var routingPhysicalOutputUIDSnapshot: Set<String>?
+    private var hardwareOutputChangeHandler: (() -> Void)?
+    private var hardwarePropertyListenerRegistered = false
+
     func invalidateSpatialVirtualDeviceReadinessCache() {
         cachedSpatialVirtualDeviceReadiness = nil
         cachedSpatialVirtualDeviceReadinessDate = nil
@@ -89,7 +99,8 @@ final class AudioDeviceService {
             let uid = stringProperty(kAudioDevicePropertyDeviceUID, on: deviceID) ?? "<nil>"
             let name = stringProperty(kAudioObjectPropertyName, on: deviceID) ?? "<nil>"
             let outputChannels = outputChannelCount(deviceID)
-            return "id=\(deviceID) name=\(name) uid=\(uid) out=\(outputChannels)"
+            let inputChannels = inputChannelCount(deviceID)
+            return "id=\(deviceID) name=\(name) uid=\(uid) in=\(inputChannels) out=\(outputChannels)"
         }.joined(separator: "; ")
         logEnumeratedDevicesIfNeeded(debugSummary)
 
@@ -139,6 +150,25 @@ final class AudioDeviceService {
             return readiness
         }
 
+        // The previous AUHAL-based readiness probe instantiates and initializes a
+        // throwaway audio unit which leaves coreaudiod with stale proxy objects (visible
+        // as `HALC_ProxySystem::GetObjectInfo: got an error from the server, Error:
+        // 560947818 (!obj)` and `HALC_ShellObject::HasProperty: there is no proxy
+        // object` in the live logs). When that stale client is torn down racing with
+        // the real capture's monitor-output AUHAL, a downstream property setter
+        // returns -10877 and one of the AVAudioEngine objects is accessed after free,
+        // crashing with a PAC failure. Treat any device with the expected UID as ready
+        // and skip the AUHAL probe entirely; set SPATIAL_FORCE_LOOPBACK_PROBE=1 to
+        // re-enable the legacy probe for comparison runs.
+        let forceProbe = ProcessInfo.processInfo.environment["SPATIAL_FORCE_LOOPBACK_PROBE"] == "1"
+        if !forceProbe {
+            logger.info("Spatial Speaker readiness succeeded (probe skipped): id=\(device.id) uid=\(device.uid, privacy: .public) name=\(device.name, privacy: .public)")
+            readiness = SpatialVirtualDeviceReadiness(device: device, issue: nil)
+            cachedSpatialVirtualDeviceReadiness = readiness
+            cachedSpatialVirtualDeviceReadinessDate = Date()
+            return readiness
+        }
+
         guard let probeIssue = probeLoopbackReadiness(for: device.id) else {
             logger.info("Spatial Speaker readiness succeeded: id=\(device.id) uid=\(device.uid, privacy: .public) name=\(device.name, privacy: .public)")
             readiness = SpatialVirtualDeviceReadiness(device: device, issue: nil)
@@ -183,6 +213,112 @@ final class AudioDeviceService {
 
     func deviceWithUID(_ uid: String) -> AudioOutputDevice? {
         allOutputDevices().first { $0.uid == uid }
+    }
+
+    func outputDevice(forID deviceID: AudioDeviceID) -> AudioOutputDevice? {
+        outputDevice(for: deviceID)
+    }
+
+    func captureRoutingPhysicalOutputBaseline() {
+        routingPhysicalOutputUIDSnapshot = Set(suitableHardwareMonitorOutputDevices().map(\.uid))
+    }
+
+    func clearRoutingPhysicalOutputBaseline() {
+        routingPhysicalOutputUIDSnapshot = nil
+    }
+
+    struct RoutingPhysicalOutputDelta: Equatable {
+        let added: [AudioOutputDevice]
+        let removedUIDs: Set<String>
+    }
+
+    /// Compares the current physical output set to `routingPhysicalOutputUIDSnapshot`, then updates the snapshot.
+    func routingPhysicalOutputDeltaUpdatingBaseline() -> RoutingPhysicalOutputDelta {
+        // Do not call invalidateSpatialVirtualDeviceReadinessCache() here: hardware
+        // notifications fire in bursts (aggregates, default-output churn). Invalidating
+        // forced full readiness re-enumeration on every delta and contributed to
+        // coreaudiod HALC_ProxyIOContext overload + severe glitching in the field.
+        let physical = suitableHardwareMonitorOutputDevices()
+        let now = Set(physical.map(\.uid))
+        let previous = routingPhysicalOutputUIDSnapshot ?? now
+        routingPhysicalOutputUIDSnapshot = now
+        let addedUIDs = now.subtracting(previous)
+        let removedUIDs = previous.subtracting(now)
+        let addedDevices = physical.filter { addedUIDs.contains($0.uid) }
+        return RoutingPhysicalOutputDelta(added: addedDevices, removedUIDs: removedUIDs)
+    }
+
+    func observeHardwareOutputRouteChanges(_ handler: @escaping () -> Void) {
+        hardwareOutputChangeHandler = handler
+        startHardwareOutputChangeListeningIfNeeded()
+    }
+
+    private func startHardwareOutputChangeListeningIfNeeded() {
+        guard !hardwarePropertyListenerRegistered else { return }
+        let ptr = Unmanaged.passUnretained(self).toOpaque()
+        var registeredAddresses: [AudioObjectPropertyAddress] = []
+        // See routingPhysicalOutputDeltaUpdatingBaseline: avoid DefaultOutputDevice listener.
+        let selectors: [AudioObjectPropertySelector] = [kAudioHardwarePropertyDevices]
+        for selector in selectors {
+            var address = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            let status = AudioObjectAddPropertyListener(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                Self.hardwareOutputPropertyListenerProc,
+                ptr
+            )
+            guard status == noErr else {
+                logger.error("AudioObjectAddPropertyListener failed selector=\(selector) status=\(status)")
+                for registered in registeredAddresses {
+                    var removable = registered
+                    AudioObjectRemovePropertyListener(
+                        AudioObjectID(kAudioObjectSystemObject),
+                        &removable,
+                        Self.hardwareOutputPropertyListenerProc,
+                        ptr
+                    )
+                }
+                return
+            }
+            registeredAddresses.append(address)
+        }
+        hardwarePropertyListenerRegistered = true
+    }
+
+    private func suitableHardwareMonitorOutputDevices() -> [AudioOutputDevice] {
+        allOutputDevices().filter(\.isSuitableHardwareMonitorOutputDevice)
+    }
+
+    private static let hardwareOutputPropertyListenerProc: AudioObjectPropertyListenerProc = { _, _, _, clientData in
+        guard let clientData else { return noErr }
+        let service = Unmanaged<AudioDeviceService>.fromOpaque(clientData).takeUnretainedValue()
+        DispatchQueue.main.async {
+            service.hardwareOutputChangeHandler?()
+        }
+        return noErr
+    }
+
+    deinit {
+        guard hardwarePropertyListenerRegistered else { return }
+        let ptr = Unmanaged.passUnretained(self).toOpaque()
+        let selectors: [AudioObjectPropertySelector] = [kAudioHardwarePropertyDevices]
+        for selector in selectors {
+            var address = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectRemovePropertyListener(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                Self.hardwareOutputPropertyListenerProc,
+                ptr
+            )
+        }
     }
 
     func halDriverFactoryConflicts() -> [HALDriverFactoryConflict] {
@@ -303,9 +439,17 @@ final class AudioDeviceService {
     }
 
     private func outputChannelCount(_ deviceID: AudioDeviceID) -> Int {
+        channelCount(deviceID, scope: kAudioDevicePropertyScopeOutput)
+    }
+
+    private func inputChannelCount(_ deviceID: AudioDeviceID) -> Int {
+        channelCount(deviceID, scope: kAudioDevicePropertyScopeInput)
+    }
+
+    private func channelCount(_ deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: scope,
             mElement: kAudioObjectPropertyElementMain
         )
 
@@ -322,7 +466,7 @@ final class AudioDeviceService {
 
         let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, rawBuffer)
         guard status == noErr else {
-            logger.error("Failed to read stream configuration for device id=\(deviceID): OSStatus=\(status)")
+            logger.error("Failed to read stream configuration for device id=\(deviceID) scope=\(scope): OSStatus=\(status)")
             return 0
         }
 

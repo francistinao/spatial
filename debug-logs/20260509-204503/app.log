@@ -1,0 +1,134 @@
+Filtering the log data using "subsystem == "com.spatial.app""
+Timestamp               Ty Process[PID:TID]
+2026-05-09 20:45:41.906 I  Spatial[57003:3a99e] [com.spatial.app:LiveDSPEngine] Attached pull-based source node for live monitor playback
+2026-05-09 20:45:42.590 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Enumerated Core Audio devices: id=90 name=MYS220 uid=37330022-0000-0000-1C20-0103802F1E78 in=0 out=2; id=88 name=FRANCIS JOHN SAUL M. TIN-AO’s iPhone Microphone uid=B1ED098C-72F9-44C0-BC74-9E1700000003 in=1 out=0; id=83 name=MacBook Air Microphone uid=BuiltInMicrophoneDevice in=1 out=0; id=76 name=MacBook Air Speakers uid=BuiltInSpeakerDevice in=0 out=2; id=131 name=CADefaultDeviceAggregate-57003-0 uid=CADefaultDeviceAggregate-57003-0 in=2 out=2; id=49 name=Spatial Speaker uid=com.spatial.app.driver.speaker in=2 out=2
+2026-05-09 20:45:42.591 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:42.594 Db Spatial[57003:3a99e] [com.spatial.app:LiveDSPEngine] Configured live DSP. rotation=0.60 depth=0.45 reverb=0.30 width=0.80 speed=4.00 elevation=0.55 centerFocus=0.60 motionCurve=0.35
+2026-05-09 20:45:42.594 I  Spatial[57003:3abaf] [com.spatial.app:LiveAudioCapture] Updated live capture startup signal expectation. expected=false
+2026-05-09 20:45:42.594 Db Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Now playing refresh. source=none title=Midnight Orbit artist=Spatial Demo playing=true demo=false
+2026-05-09 20:45:42.595 Db Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Synchronize demo playback. shouldUseDemo=false initialized=false enabled=true nowPlaying=true
+2026-05-09 20:45:43.641 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:45.135 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:46.491 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:47.429 I  Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Selected audio source: spotify
+2026-05-09 20:45:47.562 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:47.579 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:47.579 I  Spatial[57003:3a99e] [com.spatial.app:LiveAudioCapture] Requested live capture stop
+2026-05-09 20:45:47.579 I  Spatial[57003:3abb0] [com.spatial.app:LiveAudioCapture] Updated live capture startup signal expectation. expected=true
+2026-05-09 20:45:47.579 I  Spatial[57003:3abb0] [com.spatial.app:LiveAudioCapture] Playback resumed while capture was armed — resetting startup silence validation window
+2026-05-09 20:45:47.579 I  Spatial[57003:3abaf] [com.spatial.app:LiveDSPEngine] Stopped live DSP
+2026-05-09 20:45:47.611 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:47.611 Db Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Now playing refresh. source=spotify title=The Helly What artist=Kartell'em playing=true demo=false
+2026-05-09 20:45:48.155 I  Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Initializing source=spotify target=virtualDevice(uid: "com.spatial.app.driver.speaker", name: "Spatial Speaker")
+2026-05-09 20:45:48.155 Db Spatial[57003:3a99e] [com.spatial.app:LiveDSPEngine] Configured live DSP. rotation=0.60 depth=0.45 reverb=0.30 width=0.80 speed=4.00 elevation=0.55 centerFocus=0.60 motionCurve=0.35
+2026-05-09 20:45:48.155 I  Spatial[57003:3abb0] [com.spatial.app:LiveDSPEngine] Stopped live DSP
+2026-05-09 20:45:48.158 I  Spatial[57003:3a99e] [com.spatial.app:LiveDSPEngine] Pin output device requested before engine start. target=90
+2026-05-09 20:45:48.158 I  Spatial[57003:3a99e] [com.spatial.app:VirtualAudioRouting] Prepared monitor output device: MYS220 uid=37330022-0000-0000-1C20-0103802F1E78
+2026-05-09 20:45:48.158 E  Spatial[57003:3a99e] [com.spatial.app:VirtualAudioRouting] System output already points at Spatial Speaker before activation — forcing a routing reset via 'MYS220'
+2026-05-09 20:45:48.159 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] System output device set to: MYS220 uid=37330022-0000-0000-1C20-0103802F1E78
+2026-05-09 20:45:48.166 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] System output device set to: Spatial Speaker uid=com.spatial.app.driver.speaker
+2026-05-09 20:45:48.180 I  Spatial[57003:3a99e] [com.spatial.app:VirtualAudioRouting] Virtual routing active. System output routed to Spatial Speaker while Spatial monitors on 'MYS220'.
+2026-05-09 20:45:48.180 I  Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Virtual routing activated — system audio routed through Spatial Speaker
+2026-05-09 20:45:48.180 I  Spatial[57003:3a99e] [com.spatial.app:LiveAudioCapture] Prepared live capture target: virtualDevice(uid: "com.spatial.app.driver.speaker", name: "Spatial Speaker")
+2026-05-09 20:45:48.181 I  Spatial[57003:3a99e] [com.spatial.app:LiveAudioCapture] Requested live capture start for target: virtualDevice(uid: "com.spatial.app.driver.speaker", name: "Spatial Speaker") attempt=1 preferredBackend=halInputUnit
+2026-05-09 20:45:48.181 Db Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Beginning live capture setup for target: virtualDevice(uid: "com.spatial.app.driver.speaker", name: "Spatial Speaker") attempt=1
+2026-05-09 20:45:48.183 I  Spatial[57003:3abad] [com.spatial.app:AudioDeviceService] Enumerated Core Audio devices: id=90 name=MYS220 uid=37330022-0000-0000-1C20-0103802F1E78 in=0 out=2; id=88 name=FRANCIS JOHN SAUL M. TIN-AO’s iPhone Microphone uid=B1ED098C-72F9-44C0-BC74-9E1700000003 in=1 out=0; id=83 name=MacBook Air Microphone uid=BuiltInMicrophoneDevice in=1 out=0; id=76 name=MacBook Air Speakers uid=BuiltInSpeakerDevice in=0 out=2; id=131 name=CADefaultDeviceAggregate-57003-0 uid=CADefaultDeviceAggregate-57003-0 in=2 out=2; id=135 name=CADefaultDeviceAggregate-57003-1 uid=CADefaultDeviceAggregate-57003-1 in=2 out=4; id=49 name=Spatial Speaker uid=com.spatial.app.driver.speaker in=2 out=2
+2026-05-09 20:45:48.195 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] DIAG topology probe device='Spatial Speaker' deviceID=49 inputStreams=[51] outputStreams=[50] globalStreams=[50, 51]
+2026-05-09 20:45:48.195 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] DIAG topology probe streamConfig device='Spatial Speaker' scope=input buffers=1 totalChannels=2 buf0={ch=2 bytes=4096} || scope=output buffers=1 totalChannels=2 buf0={ch=2 bytes=4096} || scope=global sizeStatus=2003332927 dataSize=0
+2026-05-09 20:45:48.195 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] DIAG topology probe streams device='Spatial Speaker' streamID=51 direction=input terminal=0x6d696372 isActive=1 directionStatus=0 terminalStatus=0 activeStatus=0 | streamID=50 direction=output terminal=0x73706b72 isActive=1 directionStatus=0 terminalStatus=0 activeStatus=0
+2026-05-09 20:45:48.195 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Attempting primary loopback backend=halInputUnit attempt=1 deviceID=49 name=Spatial Speaker
+2026-05-09 20:45:48.198 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Resolved Spatial Speaker input format. attempt=1 streamID=51 sampleRate=48000.000000 channels=2 interleaved=true bytesPerFrame=8 formatFlags=9
+2026-05-09 20:45:48.222 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Configuring HAL input-unit loopback capture. attempt=1 deviceID=49
+2026-05-09 20:45:48.229 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set EnableIO/Input/elem1 attempt=1 prop=2003 scope=input element=1 size=4 status=0
+2026-05-09 20:45:48.232 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:48.232 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set EnableIO/Output/elem0 attempt=1 prop=2003 scope=output element=0 size=4 status=0
+2026-05-09 20:45:48.232 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set CurrentDevice/Global/elem0 attempt=1 prop=2000 scope=global element=0 size=4 status=0
+2026-05-09 20:45:48.232 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU get StreamFormat/Input/elem1 attempt=1 status=0 sampleRate=48000.000000 channels=2 bytesPerFrame=8 flags=9
+2026-05-09 20:45:48.233 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set StreamFormat/Output/elem1 about-to-set sampleRate=48000.000000 channels=2 bytesPerFrame=8 flags=9
+2026-05-09 20:45:48.237 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set StreamFormat/Output/elem1 attempt=1 prop=8 scope=output element=1 size=40 status=0
+2026-05-09 20:45:48.237 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU set SetInputCallback/Global/elem0 attempt=1 prop=2005 scope=global element=0 size=16 status=0
+2026-05-09 20:45:48.237 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Initializing HAL input-unit loopback capture. attempt=1 deviceID=49
+2026-05-09 20:45:48.245 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU AudioUnitInitialize attempt=1 status=0
+2026-05-09 20:45:48.245 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Starting HAL input-unit loopback capture. attempt=1 deviceID=49
+2026-05-09 20:45:48.246 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] Enabled AVAudioEngine manual rendering mode. format=48000Hz maxFrames=1024
+2026-05-09 20:45:48.248 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] Started AVAudioEngine for manual monitor rendering
+2026-05-09 20:45:48.249 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] AU AudioOutputUnitStart attempt=1 status=0
+2026-05-09 20:45:48.249 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Spatial Speaker DeviceIsRunning post-start attempt=1 deviceID=49 status=0 isRunning=1
+2026-05-09 20:45:48.249 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Loopback capture armed on device 'Spatial Speaker' id=49 backend=halInputUnit
+2026-05-09 20:45:48.249 I  Spatial[57003:3abad] [com.spatial.app:LiveAudioCapture] Live capture armed for target: virtualDevice(uid: "com.spatial.app.driver.speaker", name: "Spatial Speaker") — waiting for healthy signal. attempt=1 backend=halInputUnit
+2026-05-09 20:45:48.258 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=1 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.259 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=1 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.269 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=2 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.269 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=2 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.279 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=3 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.280 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=3 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.290 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=4 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.290 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=4 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.301 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=5 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.301 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=5 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.311 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] DIAG HAL callback n=6 attempt=1 preferredBackend=halInputUnit expectedLoopbackSource=input deviceInterleaved=true buffers=1 channels=2 frames=512
+2026-05-09 20:45:48.312 Db Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Loopback callback n=6 attempt=1 backend=halInputUnit preferredBackend=halInputUnit buffers=1 frames=512 peak=0.0000
+2026-05-09 20:45:48.448 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] Started manual monitor output on device ID=90
+2026-05-09 20:45:48.448 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] Pin output device: target=90 actual=90 auAudioUnit=90 setStatus=0 pinned=true
+2026-05-09 20:45:48.448 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] Started live DSP for source=spotify
+2026-05-09 20:45:48.448 I  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] First loopback buffer reached DSP engine consume(). source=spotify isCaptureRunning=false
+2026-05-09 20:45:48.448 E  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] consume() guard failed. source=spotify isCaptureRunning=false
+2026-05-09 20:45:48.448 E  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] consume() guard failed. source=spotify isCaptureRunning=false
+2026-05-09 20:45:48.448 E  Spatial[57003:3abfa] [com.spatial.app:LiveDSPEngine] consume() guard failed. source=spotify isCaptureRunning=false
+2026-05-09 20:45:48.457 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=1 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.458 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.467 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=1 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=512
+2026-05-09 20:45:48.468 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=2 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.468 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.468 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=2 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=1024
+2026-05-09 20:45:48.478 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=3 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.479 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.479 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=3 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=1536
+2026-05-09 20:45:48.489 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=4 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.489 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.490 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=4 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=2048
+2026-05-09 20:45:48.500 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=5 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.500 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.500 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=5 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=2560
+2026-05-09 20:45:48.510 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node render n=6 requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.511 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Source node waiting for confirmed capture. requested=512 read=0 missing=512 buffered=0
+2026-05-09 20:45:48.511 Db Spatial[57003:3ad03] [com.spatial.app:LiveDSPEngine] Manual render callback n=6 requested=512 status=AVAudioEngineManualRenderingStatus(rawValue: 0) buffered=0 totalRead=0 totalMissing=3072
+2026-05-09 20:45:48.588 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Enumerated Core Audio devices: id=90 name=MYS220 uid=37330022-0000-0000-1C20-0103802F1E78 in=0 out=2; id=88 name=FRANCIS JOHN SAUL M. TIN-AO’s iPhone Microphone uid=B1ED098C-72F9-44C0-BC74-9E1700000003 in=1 out=0; id=83 name=MacBook Air Microphone uid=BuiltInMicrophoneDevice in=1 out=0; id=76 name=MacBook Air Speakers uid=BuiltInSpeakerDevice in=0 out=2; id=141 name=CADefaultDeviceAggregate-57003-2 uid=CADefaultDeviceAggregate-57003-2 in=2 out=2; id=49 name=Spatial Speaker uid=com.spatial.app.driver.speaker in=2 out=2
+2026-05-09 20:45:48.589 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:48.662 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:49.635 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:49.649 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:50.660 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:50.810 E  Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] HAL scheduled input callbacks, but Spatial Speaker never delivered readable loopback audio. Check driver StartIO/ReadInput logs for scheduling or format mismatch.
+2026-05-09 20:45:50.813 I  Spatial[57003:3acfc] [com.spatial.app:LiveAudioCapture] Stopped HAL input-unit live capture
+2026-05-09 20:45:50.814 E  Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Capture failed before initialization completed: HAL scheduled input callbacks, but Spatial Speaker never delivered readable loopback audio. Check driver StartIO/ReadInput logs for scheduling or format mismatch.
+2026-05-09 20:45:50.822 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] System output device set to: MYS220 uid=37330022-0000-0000-1C20-0103802F1E78
+2026-05-09 20:45:50.822 I  Spatial[57003:3a99e] [com.spatial.app:VirtualAudioRouting] System output restored to: MYS220
+2026-05-09 20:45:50.823 I  Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Virtual routing deactivated — system output restored
+2026-05-09 20:45:50.825 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:50.826 I  Spatial[57003:3abad] [com.spatial.app:LiveDSPEngine] Stopped manual monitor output
+2026-05-09 20:45:50.827 I  Spatial[57003:3abad] [com.spatial.app:LiveDSPEngine] First loopback buffer reached DSP engine consume(). source=spotify isCaptureRunning=false
+2026-05-09 20:45:50.827 E  Spatial[57003:3abad] [com.spatial.app:LiveDSPEngine] consume() guard failed. source=spotify isCaptureRunning=false
+2026-05-09 20:45:51.671 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:51.882 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Enumerated Core Audio devices: id=90 name=MYS220 uid=37330022-0000-0000-1C20-0103802F1E78 in=0 out=2; id=88 name=FRANCIS JOHN SAUL M. TIN-AO’s iPhone Microphone uid=B1ED098C-72F9-44C0-BC74-9E1700000003 in=1 out=0; id=83 name=MacBook Air Microphone uid=BuiltInMicrophoneDevice in=1 out=0; id=76 name=MacBook Air Speakers uid=BuiltInSpeakerDevice in=0 out=2; id=145 name=CADefaultDeviceAggregate-57003-3 uid=CADefaultDeviceAggregate-57003-3 in=2 out=4; id=49 name=Spatial Speaker uid=com.spatial.app.driver.speaker in=2 out=2
+2026-05-09 20:45:51.883 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:52.647 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: The Helly What
+2026-05-09 20:45:53.386 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:53.642 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:53.642 Db Spatial[57003:3a99e] [com.spatial.app:SpatialAppModel] Now playing refresh. source=spotify title=FOREIGNER artist=Realest Cram playing=true demo=false
+2026-05-09 20:45:54.644 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:54.884 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:55.663 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:56.387 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:56.651 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:57.619 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:57.898 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:58.679 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:45:59.393 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:45:59.681 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:46:00.681 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:46:00.896 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:46:01.683 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:46:02.399 I  Spatial[57003:3a99e] [com.spatial.app:AudioDeviceService] Spatial Speaker readiness succeeded (probe skipped): id=49 uid=com.spatial.app.driver.speaker name=Spatial Speaker
+2026-05-09 20:46:02.676 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER
+2026-05-09 20:46:03.668 I  Spatial[57003:3a99e] [com.spatial.app:NowPlaying] Spotify now playing detected: FOREIGNER

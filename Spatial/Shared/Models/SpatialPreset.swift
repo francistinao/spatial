@@ -21,19 +21,19 @@ struct SpatialPreset: Codable, Equatable, Identifiable {
 
     static let subtle = SpatialPreset(
         kind: .subtle,
-        settings: SpatialSettings(rotation: 0.40, depth: 0.25, reverb: 0.15, width: 0.60, speed: 3, elevation: 0.40, centerFocus: 0.76, motionCurve: 0.18)
+        settings: SpatialSettings(rotation: 0.36, depth: 0.22, reverb: 0.12, width: 0.55, speed: 2.6, elevation: 0.36, centerFocus: 0.78, motionCurve: 0.16)
     )
     static let classic = SpatialPreset(
         kind: .classic,
-        settings: SpatialSettings(rotation: 0.60, depth: 0.45, reverb: 0.30, width: 0.80, speed: 4, elevation: 0.55, centerFocus: 0.60, motionCurve: 0.35)
+        settings: SpatialSettings(rotation: 0.52, depth: 0.38, reverb: 0.20, width: 0.68, speed: 3.2, elevation: 0.46, centerFocus: 0.62, motionCurve: 0.28)
     )
     static let deep = SpatialPreset(
         kind: .deep,
-        settings: SpatialSettings(rotation: 0.80, depth: 0.70, reverb: 0.60, width: 0.90, speed: 2, elevation: 0.70, centerFocus: 0.42, motionCurve: 0.68)
+        settings: SpatialSettings(rotation: 0.68, depth: 0.58, reverb: 0.42, width: 0.78, speed: 2.0, elevation: 0.58, centerFocus: 0.48, motionCurve: 0.52)
     )
     static let concert = SpatialPreset(
         kind: .concert,
-        settings: SpatialSettings(rotation: 0.90, depth: 0.80, reverb: 0.75, width: 1.00, speed: 5, elevation: 0.85, centerFocus: 0.30, motionCurve: 0.86)
+        settings: SpatialSettings(rotation: 0.76, depth: 0.64, reverb: 0.48, width: 0.82, speed: 3.4, elevation: 0.62, centerFocus: 0.42, motionCurve: 0.62)
     )
 
     static let all = [subtle, classic, deep, concert]
