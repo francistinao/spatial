@@ -44,6 +44,34 @@ final class SpatialAppModel: ObservableObject {
     private var lastLoggedNowPlayingSnapshot: NowPlayingInfo?
     private var lastLoggedDemoPlaybackSignature: String?
 
+    // #region agent log
+    private static let agentDebugLogPath = "/Users/garuda/dev/spatial/.cursor/debug-0774d3.log"
+
+    private func agentLog(hypothesisId: String, message: String, data: [String: Any]) {
+        let payload: [String: Any] = [
+            "sessionId": "0774d3",
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "runId": "source-selection-crash",
+            "hypothesisId": hypothesisId,
+            "location": "SpatialAppModel",
+            "message": message,
+            "data": data
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              var line = String(data: json, encoding: .utf8) else { return }
+        line.append("\n")
+        if !FileManager.default.fileExists(atPath: Self.agentDebugLogPath) {
+            FileManager.default.createFile(atPath: Self.agentDebugLogPath, contents: nil)
+        }
+        let url = URL(fileURLWithPath: Self.agentDebugLogPath)
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(line.utf8))
+    }
+    // #endregion
+
     var isDriverReady: Bool {
         environment.virtualAudioRoutingService.virtualDeviceAvailable
     }
@@ -154,6 +182,20 @@ final class SpatialAppModel: ObservableObject {
 
         state.onboardingStatus = onboardingStatus
         state.screenRecordingAuthorized = screenRecordingAuthorized
+        // #region agent log
+        agentLog(
+            hypothesisId: "H_state_transition",
+            message: "refresh_permission_state",
+            data: [
+                "selectedAudioSource": selectedAudioSource?.rawValue ?? "nil",
+                "hasAttemptedSelectedSourceInitialization": hasAttemptedSelectedSourceInitialization,
+                "driverInstalled": driverInstalled,
+                "driverReady": driverReady,
+                "screenRecordingAuthorized": screenRecordingAuthorized,
+                "onboardingStatus": String(describing: onboardingStatus)
+            ]
+        )
+        // #endregion
         refreshWidgetDisplayMode()
     }
 
@@ -193,6 +235,17 @@ final class SpatialAppModel: ObservableObject {
     }
 
     func selectAudioSource(_ source: AudioSourceOption) {
+        // #region agent log
+        agentLog(
+            hypothesisId: "H_select_source_path",
+            message: "select_audio_source_enter",
+            data: [
+                "source": source.rawValue,
+                "previousSelectedAudioSource": selectedAudioSource?.rawValue ?? "nil",
+                "previousOnboardingStatus": String(describing: state.onboardingStatus)
+            ]
+        )
+        // #endregion
         selectedAudioSource = source
         hasInitializedSelectedSource = false
         hasAttemptedSelectedSourceInitialization = false
@@ -202,6 +255,19 @@ final class SpatialAppModel: ObservableObject {
         isWidgetManuallyExpanded = false
         logger.info("Selected audio source: \(source.rawValue, privacy: .public)")
         nowPlaying = environment.playbackMetadataService.currentNowPlaying(for: source)
+        // #region agent log
+        agentLog(
+            hypothesisId: "H_now_playing_lookup",
+            message: "select_audio_source_now_playing_loaded",
+            data: [
+                "source": source.rawValue,
+                "nowPlayingTrack": nowPlaying.trackName,
+                "nowPlayingArtist": nowPlaying.artistName,
+                "nowPlayingSource": nowPlaying.source?.rawValue ?? "nil",
+                "nowPlayingIsPlaying": nowPlaying.isPlaying
+            ]
+        )
+        // #endregion
         synchronizeCaptureSignalExpectation()
         deactivateVirtualRouting()
         environment.audioCaptureService.stop()
@@ -210,6 +276,17 @@ final class SpatialAppModel: ObservableObject {
         engineStatus = .armed
         applyEngineStatus(.armed)
         refreshPermissionState()
+        // #region agent log
+        agentLog(
+            hypothesisId: "H_select_source_path",
+            message: "select_audio_source_exit",
+            data: [
+                "selectedAudioSource": selectedAudioSource?.rawValue ?? "nil",
+                "onboardingStatus": String(describing: state.onboardingStatus),
+                "engineStatusText": engineStatusText
+            ]
+        )
+        // #endregion
     }
 
     func initializeSelectedSource() {

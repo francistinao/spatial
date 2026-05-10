@@ -4,3 +4,5 @@ build/
 .swift-module-cache/
 *.xcuserstate
 xcuserdata/
+Docs
+.cursor

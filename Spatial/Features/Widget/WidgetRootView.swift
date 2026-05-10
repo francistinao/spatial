@@ -1,6 +1,35 @@
 import AppKit
 import SwiftUI
 
+// #region agent log
+private enum SpatialWidgetAgentDebug {
+    private static let logPath = "/Users/garuda/dev/spatial/.cursor/debug-0774d3.log"
+
+    static func logKnobDrag(hypothesisId: String, message: String, data: [String: Any]) {
+        let payload: [String: Any] = [
+            "sessionId": "0774d3",
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "hypothesisId": hypothesisId,
+            "location": "WidgetRootView.MixerRotaryKnob",
+            "message": message,
+            "data": data
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              var line = String(data: json, encoding: .utf8) else { return }
+        line.append("\n")
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil)
+        }
+        let url = URL(fileURLWithPath: logPath)
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(line.utf8))
+    }
+}
+// #endregion
+
 struct WidgetRootView: View {
     @ObservedObject var model: SpatialAppModel
     let openSettings: () -> Void
@@ -609,6 +638,15 @@ private struct MixerRotaryKnob: View {
     let layout: SpatialMetrics.WidgetLayoutProfile
     @State private var dragStartValue: Double?
     @State private var isHovering = false
+    // #region agent log
+    @State private var dragMaxAbsWidth: CGFloat = 0
+    @State private var dragMaxAbsHeight: CGFloat = 0
+    @State private var dragValueAtStart: Double = 0
+    @State private var dragLastTranslationWidth: CGFloat = 0
+    @State private var dragLastTranslationHeight: CGFloat = 0
+    @State private var dragClampHighCount: Int = 0
+    @State private var dragClampLowCount: Int = 0
+    // #endregion
 
     var body: some View {
         VStack(spacing: layout.knobStackSpacing) {
@@ -666,11 +704,61 @@ private struct MixerRotaryKnob: View {
                         let start = dragStartValue ?? value
                         if dragStartValue == nil {
                             dragStartValue = value
+                            // #region agent log
+                            dragValueAtStart = value
+                            dragMaxAbsWidth = 0
+                            dragMaxAbsHeight = 0
+                            dragLastTranslationWidth = 0
+                            dragLastTranslationHeight = 0
+                            dragClampHighCount = 0
+                            dragClampLowCount = 0
+                            // #endregion
                         }
-                        let delta = Double(-gesture.translation.height / 130)
-                        value = min(1, max(0, start + delta))
+                        let tx = gesture.translation.width
+                        let ty = gesture.translation.height
+                        // #region agent log
+                        dragMaxAbsWidth = max(dragMaxAbsWidth, abs(tx))
+                        dragMaxAbsHeight = max(dragMaxAbsHeight, abs(ty))
+                        // #endregion
+                        // Horizontal-dominant drags use width (right increases, left decreases).
+                        // Vertical-dominant drags use height (up increases, down decreases).
+                        let delta: Double
+                        if abs(tx) >= abs(ty) {
+                            delta = Double(tx / 130)
+                        } else {
+                            delta = Double(-ty / 130)
+                        }
+                        let nextValue = min(1, max(0, start + delta))
+                        // #region agent log
+                        dragLastTranslationWidth = tx
+                        dragLastTranslationHeight = ty
+                        if nextValue >= 1 {
+                            dragClampHighCount += 1
+                        } else if nextValue <= 0 {
+                            dragClampLowCount += 1
+                        }
+                        // #endregion
+                        value = nextValue
                     }
                     .onEnded { _ in
+                        // #region agent log
+                        SpatialWidgetAgentDebug.logKnobDrag(
+                            hypothesisId: "H_high_value_horizontal",
+                            message: "knob_drag_ended",
+                            data: [
+                                "title": title,
+                                "valueStart": dragValueAtStart,
+                                "valueEnd": value,
+                                "maxAbsTranslationWidth": Double(dragMaxAbsWidth),
+                                "maxAbsTranslationHeight": Double(dragMaxAbsHeight),
+                                "lastTranslationWidth": Double(dragLastTranslationWidth),
+                                "lastTranslationHeight": Double(dragLastTranslationHeight),
+                                "dominantAxis": dragMaxAbsWidth >= dragMaxAbsHeight ? "horizontal" : "vertical",
+                                "clampHighCount": dragClampHighCount,
+                                "clampLowCount": dragClampLowCount
+                            ]
+                        )
+                        // #endregion
                         dragStartValue = nil
                     }
             )

@@ -1,6 +1,36 @@
 import AppKit
 import SwiftUI
 
+// #region agent log
+private enum SourceSelectionAgentDebug {
+    private static let logPath = "/Users/garuda/dev/spatial/.cursor/debug-0774d3.log"
+
+    static func log(hypothesisId: String, message: String, data: [String: Any]) {
+        let payload: [String: Any] = [
+            "sessionId": "0774d3",
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "runId": "source-selection-crash",
+            "hypothesisId": hypothesisId,
+            "location": "SourceSelectionView",
+            "message": message,
+            "data": data
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              var line = String(data: json, encoding: .utf8) else { return }
+        line.append("\n")
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil)
+        }
+        let url = URL(fileURLWithPath: logPath)
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(line.utf8))
+    }
+}
+// #endregion
+
 @MainActor
 final class SourceSelectionPanelState: ObservableObject {
     @Published var isExpanded = false
@@ -194,6 +224,17 @@ struct SourceSelectionView: View {
                         source: source,
                         isSelected: model.selectedAudioSource == source
                     ) {
+                        // #region agent log
+                        SourceSelectionAgentDebug.log(
+                            hypothesisId: "H_source_card_action",
+                            message: "source_card_tapped",
+                            data: [
+                                "source": source.rawValue,
+                                "panelExpanded": panelState.isExpanded,
+                                "currentlySelectedSource": model.selectedAudioSource?.rawValue ?? "nil"
+                            ]
+                        )
+                        // #endregion
                         model.selectAudioSource(source)
                     }
                 }
