@@ -80,7 +80,7 @@ enum SpatialMetrics {
     static let widgetCollapsedHeight: CGFloat = 90
     static let widgetNotchTopPadding: CGFloat = 6
     static let widgetNotchHeight: CGFloat = 36
-    static let widgetNotchCardGap: CGFloat = 12
+    static let widgetNotchCardGap: CGFloat = 8
     static let settingsPopoverWidth: CGFloat = 320
     static let settingsPopoverHeight: CGFloat = 500
     static let sourceSelectionWidth: CGFloat = 520
@@ -110,7 +110,7 @@ enum SpatialMetrics {
                 headerLogoHeight: 74,
                 headerControlSize: 30,
                 headerHorizontalPadding: 16,
-                headerTopPadding: 10,
+                headerTopPadding: 5,
                 headerBottomPadding: 8,
                 sectionHorizontalPadding: 16,
                 sectionTitleFontSize: 10,
@@ -180,7 +180,7 @@ enum SpatialMetrics {
             headerLogoHeight: 90,
             headerControlSize: 34,
             headerHorizontalPadding: 18,
-            headerTopPadding: 12,
+            headerTopPadding: 6,
             headerBottomPadding: 10,
             sectionHorizontalPadding: 18,
             sectionTitleFontSize: 11,

@@ -69,7 +69,7 @@ private struct ExpandedWidgetView: View {
             presets
             footer
         }
-        .padding(.top, layout.mode == .compact ? 2 : 4)
+        .padding(.top, layout.mode == .compact ? 0 : 2)
         .background(widgetBackground)
         .clipShape(RoundedRectangle(cornerRadius: layout.cardCornerRadius, style: .continuous))
         .overlay(
@@ -106,7 +106,7 @@ private struct ExpandedWidgetView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, layout.headerHorizontalPadding)
-        .padding(.top, layout.mode == .compact ? max(4, layout.headerTopPadding - 4) : max(6, layout.headerTopPadding - 4))
+        .padding(.top, layout.headerTopPadding)
         .padding(.bottom, layout.headerBottomPadding)
     }
 
@@ -466,18 +466,38 @@ private struct VisualizerPanel: View {
     let layout: SpatialMetrics.WidgetLayoutProfile
     let themeAccent: Color
 
+    private var effectiveBars: [CGFloat] {
+        if bars.isEmpty {
+            return Array(repeating: 0.08, count: 28)
+        }
+        return bars
+    }
+
+    private static let innerHorizontalInset: CGFloat = 11
+
     var body: some View {
         VStack {
             Spacer()
 
-            HStack(alignment: .bottom, spacing: layout.mode == .compact ? 3 : 4) {
-                ForEach(Array(bars.enumerated()), id: \.offset) { _, value in
-                    Capsule(style: .continuous)
-                        .fill(themeAccent)
-                        .frame(width: layout.mode == .compact ? 4 : 5, height: max(layout.mode == .compact ? 10 : 12, value * (layout.mode == .compact ? 72 : 84)))
+            GeometryReader { geo in
+                let metrics = Self.barMetrics(
+                    coreWidth: max(0, geo.size.width - Self.innerHorizontalInset * 2),
+                    barCount: effectiveBars.count,
+                    layout: layout
+                )
+                HStack(alignment: .bottom, spacing: metrics.spacing) {
+                    ForEach(Array(effectiveBars.enumerated()), id: \.offset) { _, value in
+                        Capsule(style: .continuous)
+                            .fill(themeAccent)
+                            .frame(
+                                width: metrics.barWidth,
+                                height: max(layout.mode == .compact ? 10 : 12, value * (layout.mode == .compact ? 72 : 84))
+                            )
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.horizontal, Self.innerHorizontalInset)
             }
-            .padding(.horizontal, layout.sectionHorizontalPadding)
             .padding(.bottom, layout.mode == .compact ? 8 : 10)
         }
         .frame(maxWidth: .infinity)
@@ -489,6 +509,26 @@ private struct VisualizerPanel: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.white.opacity(0.04), lineWidth: 1)
         )
+    }
+
+    private static func barMetrics(
+        coreWidth: CGFloat,
+        barCount: Int,
+        layout: SpatialMetrics.WidgetLayoutProfile
+    ) -> (barWidth: CGFloat, spacing: CGFloat) {
+        let count = max(1, barCount)
+        let n = CGFloat(count)
+        let preferredSpacing = layout.mode == .compact ? CGFloat(3) : CGFloat(4)
+        let minBarWidth: CGFloat = 2.5
+        var spacing = preferredSpacing
+        var barWidth = (coreWidth - (n - 1) * spacing) / n
+        if barWidth < minBarWidth, n > 1 {
+            spacing = max(0.5, (coreWidth - n * minBarWidth) / (n - 1))
+            barWidth = max(minBarWidth, (coreWidth - (n - 1) * spacing) / n)
+        } else if barWidth < minBarWidth {
+            barWidth = max(1, coreWidth / n)
+        }
+        return (barWidth, spacing)
     }
 }
 
