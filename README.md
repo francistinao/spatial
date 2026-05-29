@@ -1,3 +1,5 @@
+<img width="1890" height="3360" alt="“Spatial”" src="https://github.com/user-attachments/assets/b4a37d23-0deb-42d4-a2b4-d3437ed1647e" />
+
 # SP8IAL (Spatial)
 
 > Real-time 8D audio processing utility for macOS
@@ -102,4 +104,6 @@ elevationAngle = elevation × (π/2)
 
 _Built with AVAudioEngine + SwiftUI + Core Audio. Distributed outside the App Store as a notarized .dmg._ 
 
-Built with <3 by Francis Tin-ao
+---
+
+Built with <3 by Francis Tin-ao, Open Source
