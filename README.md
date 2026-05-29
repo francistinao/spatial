@@ -43,7 +43,7 @@ Spotify / Apple Music / Browser
    ├── Reverb           — room/space simulation
    └── Stereo width     — soundstage expansion
         ↓
-   Output → Headphones / Speakers
+   Output → Spatial Virtual Speakers via Hardware Abstraction Layer (HAL) 
 ```
 
 ---
